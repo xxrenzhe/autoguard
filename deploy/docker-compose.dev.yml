@@ -1,0 +1,31 @@
+# AutoGuard Docker Compose Development Override
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+version: '3.8'
+
+services:
+  autoguard:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: builder  # Use builder stage for development
+    volumes:
+      # Mount source code for live reload
+      - ../packages:/app/packages
+      - ../workers:/app/workers
+      # Keep node_modules in container
+      - /app/node_modules
+      - /app/packages/shared/node_modules
+      - /app/packages/cloak/node_modules
+      - /app/packages/page-generator/node_modules
+      - /app/packages/web/node_modules
+      - /app/workers/cloak-worker/node_modules
+      - /app/workers/log-writer/node_modules
+    environment:
+      - NODE_ENV=development
+      - DEBUG=autoguard:*
+    ports:
+      # Expose additional ports for debugging
+      - "3000:3000"  # Web dashboard
+      - "3001:3001"  # Cloak worker
+      - "6379:6379"  # Redis (for debugging)

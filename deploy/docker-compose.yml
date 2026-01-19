@@ -1,0 +1,55 @@
+# AutoGuard Docker Compose Configuration
+# For development and production deployment
+
+version: '3.8'
+
+services:
+  # Main AutoGuard application container
+  autoguard:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: autoguard
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      # Persistent data
+      - autoguard_data:/data
+      # GeoIP database (MaxMind)
+      - ./geoip:/app/geoip:ro
+      # Logs (optional, for debugging)
+      - ./logs:/var/log/autoguard
+    environment:
+      # Database
+      - DATABASE_PATH=/data/db/autoguard.db
+      # Redis (internal)
+      - REDIS_URL=redis://127.0.0.1:6379
+      # JWT Secret (CHANGE IN PRODUCTION!)
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-key-change-in-production}
+      # GeoIP
+      - GEOIP_DB_PATH=/app/geoip/GeoLite2-City.mmdb
+      - GEOIP_ASN_DB_PATH=/app/geoip/GeoLite2-ASN.mmdb
+      # AI Generation (optional)
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      # Domain
+      - SYSTEM_DOMAIN=autoguard.dev
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - autoguard_network
+
+# Development override (docker-compose.dev.yml)
+# Use: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+volumes:
+  autoguard_data:
+    driver: local
+
+networks:
+  autoguard_network:
+    driver: bridge

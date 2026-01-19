@@ -1,0 +1,407 @@
+'use client';
+
+import { useState, useEffect, use } from 'react';
+import Link from 'next/link';
+import { toast } from 'sonner';
+
+interface PageData {
+  id: number;
+  offer_id: number;
+  variant: 'a' | 'b';
+  source_type: string;
+  source_url: string | null;
+  local_path: string | null;
+  status: string;
+  meta: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface OfferInfo {
+  id: number;
+  brand_name: string;
+  subdomain: string;
+}
+
+export default function OfferPagesPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const [offer, setOffer] = useState<OfferInfo | null>(null);
+  const [pages, setPages] = useState<PageData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState<string | null>(null);
+
+  // Modal state
+  const [showModal, setShowModal] = useState(false);
+  const [modalVariant, setModalVariant] = useState<'a' | 'b'>('a');
+  const [modalAction, setModalAction] = useState<'scrape' | 'ai_generate'>('scrape');
+  const [modalUrl, setModalUrl] = useState('');
+
+  useEffect(() => {
+    fetchPages();
+  }, [id]);
+
+  async function fetchPages() {
+    try {
+      const response = await fetch(`/api/offers/${id}/pages`);
+      const data = await response.json();
+
+      if (data.success) {
+        setOffer(data.data.offer);
+        setPages(data.data.pages);
+      } else {
+        toast.error(data.error?.message || 'Failed to fetch pages');
+      }
+    } catch {
+      toast.error('Network error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleGenerate() {
+    if (modalAction === 'scrape' && !modalUrl) {
+      toast.error('Please enter a URL to scrape');
+      return;
+    }
+
+    setGenerating(modalVariant);
+    setShowModal(false);
+
+    try {
+      const response = await fetch(`/api/offers/${id}/pages/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          variant: modalVariant,
+          action: modalAction,
+          source_url: modalUrl || undefined,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success(data.data.message || 'Page generation started');
+        // Refresh pages list
+        fetchPages();
+      } else {
+        toast.error(data.error?.message || 'Failed to start generation');
+      }
+    } catch {
+      toast.error('Network error');
+    } finally {
+      setGenerating(null);
+    }
+  }
+
+  function openGenerateModal(variant: 'a' | 'b') {
+    setModalVariant(variant);
+    setModalAction('scrape');
+    setModalUrl('');
+    setShowModal(true);
+  }
+
+  const moneyPage = pages.find((p) => p.variant === 'a');
+  const safePage = pages.find((p) => p.variant === 'b');
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-gray-500">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto">
+      <div className="flex items-center space-x-3 mb-6">
+        <Link
+          href={`/offers/${id}`}
+          className="text-gray-500 hover:text-gray-700"
+        >
+          ← Back
+        </Link>
+        <h1 className="text-2xl font-bold text-gray-900">
+          Page Management: {offer?.brand_name}
+        </h1>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Money Page (Variant A) */}
+        <div className="bg-white rounded-lg shadow">
+          <div className="p-6 border-b">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Money Page</h2>
+                <p className="text-sm text-gray-500">Shown to real users</p>
+              </div>
+              <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                Variant A
+              </span>
+            </div>
+          </div>
+
+          <div className="p-6">
+            {moneyPage ? (
+              <div className="space-y-4">
+                <div>
+                  <span className="text-xs text-gray-500 block">Status</span>
+                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                    moneyPage.status === 'ready'
+                      ? 'bg-green-100 text-green-700'
+                      : moneyPage.status === 'generating'
+                      ? 'bg-yellow-100 text-yellow-700'
+                      : moneyPage.status === 'failed'
+                      ? 'bg-red-100 text-red-700'
+                      : 'bg-gray-100 text-gray-700'
+                  }`}>
+                    {moneyPage.status}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-xs text-gray-500 block">Source Type</span>
+                  <span className="text-sm text-gray-900">{moneyPage.source_type}</span>
+                </div>
+
+                {moneyPage.source_url && (
+                  <div>
+                    <span className="text-xs text-gray-500 block">Source URL</span>
+                    <a
+                      href={moneyPage.source_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-blue-600 hover:text-blue-700 break-all"
+                    >
+                      {moneyPage.source_url}
+                    </a>
+                  </div>
+                )}
+
+                <div>
+                  <span className="text-xs text-gray-500 block">Last Updated</span>
+                  <span className="text-sm text-gray-900">
+                    {new Date(moneyPage.updated_at).toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="pt-4 flex space-x-2">
+                  <button
+                    onClick={() => openGenerateModal('a')}
+                    disabled={generating === 'a'}
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {generating === 'a' ? 'Generating...' : 'Regenerate'}
+                  </button>
+                  {moneyPage.status === 'ready' && (
+                    <a
+                      href={`https://${offer?.subdomain}.autoguard.dev`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      Preview
+                    </a>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-gray-500 mb-4">No money page configured</p>
+                <button
+                  onClick={() => openGenerateModal('a')}
+                  disabled={generating === 'a'}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {generating === 'a' ? 'Generating...' : 'Generate Money Page'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Safe Page (Variant B) */}
+        <div className="bg-white rounded-lg shadow">
+          <div className="p-6 border-b">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Safe Page</h2>
+                <p className="text-sm text-gray-500">Shown to bots/crawlers</p>
+              </div>
+              <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-medium">
+                Variant B
+              </span>
+            </div>
+          </div>
+
+          <div className="p-6">
+            {safePage ? (
+              <div className="space-y-4">
+                <div>
+                  <span className="text-xs text-gray-500 block">Status</span>
+                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                    safePage.status === 'ready'
+                      ? 'bg-green-100 text-green-700'
+                      : safePage.status === 'generating'
+                      ? 'bg-yellow-100 text-yellow-700'
+                      : safePage.status === 'failed'
+                      ? 'bg-red-100 text-red-700'
+                      : 'bg-gray-100 text-gray-700'
+                  }`}>
+                    {safePage.status}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-xs text-gray-500 block">Source Type</span>
+                  <span className="text-sm text-gray-900">{safePage.source_type}</span>
+                </div>
+
+                {safePage.source_url && (
+                  <div>
+                    <span className="text-xs text-gray-500 block">Source URL</span>
+                    <a
+                      href={safePage.source_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-blue-600 hover:text-blue-700 break-all"
+                    >
+                      {safePage.source_url}
+                    </a>
+                  </div>
+                )}
+
+                <div>
+                  <span className="text-xs text-gray-500 block">Last Updated</span>
+                  <span className="text-sm text-gray-900">
+                    {new Date(safePage.updated_at).toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="pt-4 flex space-x-2">
+                  <button
+                    onClick={() => openGenerateModal('b')}
+                    disabled={generating === 'b'}
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {generating === 'b' ? 'Generating...' : 'Regenerate'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-gray-500 mb-4">No safe page configured</p>
+                <button
+                  onClick={() => openGenerateModal('b')}
+                  disabled={generating === 'b'}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {generating === 'b' ? 'Generating...' : 'Generate Safe Page'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Page Paths Info */}
+      <div className="mt-6 bg-white rounded-lg shadow p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Page Storage Paths</h3>
+        <div className="space-y-3 font-mono text-sm">
+          <div className="flex items-center justify-between p-3 bg-gray-50 rounded">
+            <span className="text-gray-600">Money Page (A):</span>
+            <code className="text-gray-900">/data/pages/{offer?.subdomain}/a/</code>
+          </div>
+          <div className="flex items-center justify-between p-3 bg-gray-50 rounded">
+            <span className="text-gray-600">Safe Page (B):</span>
+            <code className="text-gray-900">/data/pages/{offer?.subdomain}/b/</code>
+          </div>
+          <div className="flex items-center justify-between p-3 bg-gray-50 rounded">
+            <span className="text-gray-600">Static Assets:</span>
+            <code className="text-gray-900">/static/{offer?.subdomain}/[a|b]/assets/</code>
+          </div>
+        </div>
+      </div>
+
+      {/* Generate Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              Generate {modalVariant === 'a' ? 'Money' : 'Safe'} Page
+            </h2>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Generation Method
+                </label>
+                <div className="flex space-x-4">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      value="scrape"
+                      checked={modalAction === 'scrape'}
+                      onChange={() => setModalAction('scrape')}
+                      className="mr-2"
+                    />
+                    <span>Scrape URL</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      value="ai_generate"
+                      checked={modalAction === 'ai_generate'}
+                      onChange={() => setModalAction('ai_generate')}
+                      className="mr-2"
+                    />
+                    <span>AI Generate</span>
+                  </label>
+                </div>
+              </div>
+
+              {modalAction === 'scrape' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    URL to Scrape
+                  </label>
+                  <input
+                    type="url"
+                    value={modalUrl}
+                    onChange={(e) => setModalUrl(e.target.value)}
+                    placeholder="https://example.com"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+              )}
+
+              {modalAction === 'ai_generate' && (
+                <div className="p-4 bg-blue-50 rounded-lg text-sm text-blue-800">
+                  AI will generate a {modalVariant === 'a' ? 'landing page' : 'safe page'} based on the brand URL.
+                  {modalVariant === 'b' && ' The safe page will be compliance-friendly with no affiliate links.'}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleGenerate}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Start Generation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

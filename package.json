@@ -1,0 +1,40 @@
+{
+  "name": "autoguard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AutoGuard - Intelligent Traffic Cloaking System",
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "dev:web": "pnpm --filter @autoguard/web dev",
+    "dev:cloak": "pnpm --filter @autoguard/cloak-worker dev",
+    "dev:log-writer": "pnpm --filter @autoguard/log-writer dev",
+    "dev:scheduler": "pnpm --filter @autoguard/scheduler dev",
+    "build": "pnpm -r run build",
+    "build:web": "pnpm --filter @autoguard/web build",
+    "build:cloak": "pnpm --filter @autoguard/cloak build",
+    "build:worker": "pnpm --filter @autoguard/cloak-worker build",
+    "build:log-writer": "pnpm --filter @autoguard/log-writer build",
+    "build:scheduler": "pnpm --filter @autoguard/scheduler build",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "pnpm -r run lint",
+    "test": "pnpm -r run test",
+    "db:init": "pnpm --filter @autoguard/shared db:init",
+    "db:migrate": "pnpm --filter @autoguard/shared db:migrate",
+    "db:seed": "pnpm --filter @autoguard/shared db:seed",
+    "clean": "pnpm -r run clean && rm -rf node_modules",
+    "docker:build": "docker-compose -f deploy/docker-compose.yml build",
+    "docker:up": "docker-compose -f deploy/docker-compose.yml up -d",
+    "docker:down": "docker-compose -f deploy/docker-compose.yml down",
+    "docker:logs": "docker-compose -f deploy/docker-compose.yml logs -f",
+    "deploy": "cd deploy && ./deploy.sh"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0"
+}

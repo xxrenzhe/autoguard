@@ -1,0 +1,265 @@
+'use client';
+
+import { useState, useEffect, use } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { toast } from 'sonner';
+
+const COUNTRIES = [
+  { code: 'US', name: 'United States' },
+  { code: 'CA', name: 'Canada' },
+  { code: 'GB', name: 'United Kingdom' },
+  { code: 'AU', name: 'Australia' },
+  { code: 'DE', name: 'Germany' },
+  { code: 'FR', name: 'France' },
+  { code: 'JP', name: 'Japan' },
+  { code: 'BR', name: 'Brazil' },
+  { code: 'IN', name: 'India' },
+  { code: 'MX', name: 'Mexico' },
+];
+
+interface OfferData {
+  id: number;
+  brand_name: string;
+  brand_url: string;
+  affiliate_link: string;
+  target_countries: string[];
+  cloak_enabled: number;
+  status: string;
+}
+
+export default function EditOfferPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [formData, setFormData] = useState({
+    brand_name: '',
+    brand_url: '',
+    affiliate_link: '',
+    target_countries: [] as string[],
+    cloak_enabled: false,
+    status: 'draft',
+  });
+
+  useEffect(() => {
+    fetchOffer();
+  }, [id]);
+
+  async function fetchOffer() {
+    try {
+      const response = await fetch(`/api/offers/${id}`);
+      const data = await response.json();
+      if (data.success) {
+        const offer: OfferData = data.data;
+        setFormData({
+          brand_name: offer.brand_name,
+          brand_url: offer.brand_url,
+          affiliate_link: offer.affiliate_link,
+          target_countries: offer.target_countries || [],
+          cloak_enabled: offer.cloak_enabled === 1,
+          status: offer.status,
+        });
+      } else {
+        toast.error(data.error?.message || 'Failed to fetch offer');
+        router.push('/offers');
+      }
+    } catch {
+      toast.error('Network error');
+      router.push('/offers');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleCountryToggle(code: string) {
+    setFormData((prev) => ({
+      ...prev,
+      target_countries: prev.target_countries.includes(code)
+        ? prev.target_countries.filter((c) => c !== code)
+        : [...prev.target_countries, code],
+    }));
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+
+    try {
+      const response = await fetch(`/api/offers/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        toast.error(data.error?.message || 'Failed to update offer');
+        return;
+      }
+
+      toast.success('Offer updated successfully');
+      router.push(`/offers/${id}`);
+    } catch {
+      toast.error('Network error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-gray-500">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <div className="flex items-center space-x-3 mb-6">
+        <Link
+          href={`/offers/${id}`}
+          className="text-gray-500 hover:text-gray-700"
+        >
+          ← Back
+        </Link>
+        <h1 className="text-2xl font-bold text-gray-900">Edit Offer</h1>
+      </div>
+
+      <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6 space-y-6">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Brand Name *
+          </label>
+          <input
+            type="text"
+            value={formData.brand_name}
+            onChange={(e) =>
+              setFormData({ ...formData, brand_name: e.target.value })
+            }
+            required
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="e.g. Invideo"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Brand Website URL *
+          </label>
+          <input
+            type="url"
+            value={formData.brand_url}
+            onChange={(e) =>
+              setFormData({ ...formData, brand_url: e.target.value })
+            }
+            required
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="https://invideo.io/"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Affiliate Link *
+          </label>
+          <input
+            type="url"
+            value={formData.affiliate_link}
+            onChange={(e) =>
+              setFormData({ ...formData, affiliate_link: e.target.value })
+            }
+            required
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="https://invideo.sjv.io/abc123"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Target Countries
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {COUNTRIES.map((country) => (
+              <button
+                key={country.code}
+                type="button"
+                onClick={() => handleCountryToggle(country.code)}
+                className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+                  formData.target_countries.includes(country.code)
+                    ? 'bg-blue-100 border-blue-500 text-blue-700'
+                    : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                {country.name}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-sm text-gray-500">
+            Leave empty to target all countries
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Status
+          </label>
+          <select
+            value={formData.status}
+            onChange={(e) =>
+              setFormData({ ...formData, status: e.target.value })
+            }
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="draft">Draft</option>
+            <option value="active">Active</option>
+            <option value="paused">Paused</option>
+          </select>
+        </div>
+
+        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+          <div>
+            <h4 className="font-medium text-gray-900">Enable Cloak</h4>
+            <p className="text-sm text-gray-500">
+              When enabled, the system will filter traffic and show different pages
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              setFormData({ ...formData, cloak_enabled: !formData.cloak_enabled })
+            }
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              formData.cloak_enabled ? 'bg-blue-600' : 'bg-gray-200'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                formData.cloak_enabled ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+
+        <div className="flex justify-end space-x-4 pt-4">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
