@@ -1,5 +1,8 @@
 import { customAlphabet } from 'nanoid';
 
+// 导出 crypto 工具
+export * from './crypto.js';
+
 /**
  * 生成 6 位随机子域名
  */

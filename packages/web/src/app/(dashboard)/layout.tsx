@@ -48,6 +48,12 @@ export default async function DashboardLayout({
                 >
                   Logs
                 </Link>
+                <Link
+                  href="/settings"
+                  className="text-gray-600 hover:text-gray-900 font-medium"
+                >
+                  Settings
+                </Link>
               </nav>
             </div>
             <div className="flex items-center space-x-4">

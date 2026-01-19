@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "composite": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@autoguard/shared": ["./packages/shared/src"],
+      "@autoguard/shared/*": ["./packages/shared/src/*"],
+      "@autoguard/cloak": ["./packages/cloak/src"],
+      "@autoguard/cloak/*": ["./packages/cloak/src/*"],
+      "@autoguard/page-generator": ["./packages/page-generator/src"],
+      "@autoguard/page-generator/*": ["./packages/page-generator/src/*"]
+    }
+  },
+  "exclude": ["node_modules", "dist", ".next"]
+}
