@@ -85,3 +85,10 @@ export async function getCurrentUser(): Promise<JWTPayload | null> {
   if (!token) return null;
   return verifyToken(token);
 }
+
+/**
+ * 获取会话 (别名，方便 API 使用)
+ */
+export async function getSession(): Promise<JWTPayload | null> {
+  return getCurrentUser();
+}

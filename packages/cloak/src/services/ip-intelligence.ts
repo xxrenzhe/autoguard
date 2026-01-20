@@ -3,10 +3,10 @@
  * 使用 MaxMind 数据库进行 IP 查询
  */
 
-import { Reader, ReaderModel, CityResponse, AsnResponse } from 'maxmind';
+import maxmind, { CityResponse, AsnResponse, Reader as MaxmindReader } from 'maxmind';
 import { LRUCache } from 'lru-cache';
 import { getRedis, CacheKeys, CacheTTL } from '@autoguard/shared';
-import type { IPLookupResult } from '../types.js';
+import type { IPLookupResult } from '../types';
 import path from 'path';
 import fs from 'fs';
 
@@ -17,8 +17,8 @@ const memoryCache = new LRUCache<string, IPLookupResult>({
 });
 
 // MaxMind Reader 实例
-let cityReader: ReaderModel<CityResponse> | null = null;
-let asnReader: ReaderModel<AsnResponse> | null = null;
+let cityReader: MaxmindReader<CityResponse> | null = null;
+let asnReader: MaxmindReader<AsnResponse> | null = null;
 let initialized = false;
 
 /**
@@ -27,21 +27,23 @@ let initialized = false;
 export async function initMaxMind(): Promise<void> {
   if (initialized) return;
 
-  const dbPath = process.env.MAXMIND_DB_PATH || '/data/maxmind';
+  // Support both MAXMIND_DB_PATH (directory) and GEOIP_DB_PATH/GEOIP_ASN_DB_PATH (individual files)
+  // docker-compose uses GEOIP_DB_PATH/GEOIP_ASN_DB_PATH
+  const maxmindDir = process.env.MAXMIND_DB_PATH || '/data/maxmind';
 
-  const cityDbPath = path.join(dbPath, 'GeoLite2-City.mmdb');
-  const asnDbPath = path.join(dbPath, 'GeoLite2-ASN.mmdb');
+  const cityDbPath = process.env.GEOIP_DB_PATH || path.join(maxmindDir, 'GeoLite2-City.mmdb');
+  const asnDbPath = process.env.GEOIP_ASN_DB_PATH || path.join(maxmindDir, 'GeoLite2-ASN.mmdb');
 
   try {
     if (fs.existsSync(cityDbPath)) {
-      cityReader = await Reader.open<CityResponse>(cityDbPath);
+      cityReader = await maxmind.open<CityResponse>(cityDbPath);
       console.log('MaxMind City database loaded');
     } else {
       console.warn(`MaxMind City database not found: ${cityDbPath}`);
     }
 
     if (fs.existsSync(asnDbPath)) {
-      asnReader = await Reader.open<AsnResponse>(asnDbPath);
+      asnReader = await maxmind.open<AsnResponse>(asnDbPath);
       console.log('MaxMind ASN database loaded');
     } else {
       console.warn(`MaxMind ASN database not found: ${asnDbPath}`);

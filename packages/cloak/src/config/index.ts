@@ -1,4 +1,4 @@
-import type { CloakConfig } from './types.js';
+import type { CloakConfig } from '../types';
 
 /**
  * 默认 Cloak 配置

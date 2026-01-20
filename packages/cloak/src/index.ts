@@ -1,5 +1,5 @@
 // 主入口
-export { makeDecision, initEngine, getDecisionReason } from './engine.js';
+export { makeDecision, initEngine, getDecisionReason } from './engine';
 
 // 类型导出
 export type {
@@ -18,7 +18,7 @@ export type {
   L3Details,
   L4Details,
   L5Details,
-} from './types.js';
+} from './types';
 
 // 检测器导出
 export {
@@ -27,10 +27,10 @@ export {
   l3Detector,
   l4Detector,
   l5Detector,
-} from './detectors/index.js';
+} from './detectors';
 
 // 服务导出
-export { getIPIntelligence, initMaxMind, closeMaxMind } from './services/index.js';
+export { getIPIntelligence, initMaxMind, closeMaxMind } from './services';
 
 // 配置导出
-export { defaultConfig, KNOWN_BOT_PATTERNS, SUSPICIOUS_UA_PATTERNS } from './config/index.js';
+export { defaultConfig, KNOWN_BOT_PATTERNS, SUSPICIOUS_UA_PATTERNS } from './config';

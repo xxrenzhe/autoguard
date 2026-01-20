@@ -1,7 +1,7 @@
 import { customAlphabet } from 'nanoid';
 
 // 导出 crypto 工具
-export * from './crypto.js';
+export * from './crypto';
 
 /**
  * 生成 6 位随机子域名

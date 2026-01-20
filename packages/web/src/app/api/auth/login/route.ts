@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { queryOne, execute } from '@autoguard/shared';
 import type { User } from '@autoguard/shared';
 import { createToken, setAuthCookie } from '@/lib/auth';
+import { withRateLimit, defaultRateLimits, rateLimitExceededResponse } from '@/lib/rate-limit';
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -11,6 +12,18 @@ const loginSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  // Apply rate limiting for login attempts (stricter limit)
+  const rateLimitResult = await withRateLimit(
+    request,
+    null,
+    'auth:login',
+    defaultRateLimits.auth
+  );
+
+  if (!rateLimitResult.allowed) {
+    return rateLimitExceededResponse(rateLimitResult);
+  }
+
   try {
     const body = await request.json();
     const { email, password } = loginSchema.parse(body);

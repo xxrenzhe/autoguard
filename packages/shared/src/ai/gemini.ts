@@ -75,7 +75,7 @@ IMPORTANT: Respond ONLY with valid JSON. Do not include any markdown formatting,
 
   // 移除可能的 markdown 代码块
   const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  if (jsonMatch) {
+  if (jsonMatch && jsonMatch[1]) {
     jsonStr = jsonMatch[1];
   }
 

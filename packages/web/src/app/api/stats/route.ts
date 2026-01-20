@@ -54,7 +54,7 @@ export async function GET(request: Request) {
       endDate = params.end_date;
     } else {
       const now = new Date();
-      endDate = now.toISOString().split('T')[0];
+      endDate = now.toISOString().split('T')[0]!;
 
       const daysMap: Record<string, number> = {
         '7d': 7,
@@ -62,14 +62,14 @@ export async function GET(request: Request) {
         '90d': 90,
         'all': 365 * 10, // 10 years
       };
-      const days = daysMap[params.period];
+      const days = daysMap[params.period] ?? 7;
       const start = new Date(now);
       start.setDate(start.getDate() - days);
-      startDate = start.toISOString().split('T')[0];
+      startDate = start.toISOString().split('T')[0]!;
     }
 
     // 构建查询条件
-    let whereClause = 'WHERE ds.date BETWEEN ? AND ?';
+    let whereClause = 'WHERE ds.stat_date BETWEEN ? AND ?';
     const whereParams: unknown[] = [startDate, endDate];
 
     if (params.offer_id) {
@@ -97,15 +97,15 @@ export async function GET(request: Request) {
     // 获取每日统计
     const dailyStats = queryAll<DailyStat>(
       `SELECT
-        ds.date,
+        ds.stat_date as date,
         SUM(ds.total_visits) as total_visits,
         SUM(ds.money_page_visits) as money_page_visits,
         SUM(ds.safe_page_visits) as safe_page_visits,
         SUM(ds.unique_ips) as unique_ips
       FROM daily_stats ds
       ${whereClause}
-      GROUP BY ds.date
-      ORDER BY ds.date ASC`,
+      GROUP BY ds.stat_date
+      ORDER BY ds.stat_date ASC`,
       whereParams
     );
 
@@ -137,8 +137,8 @@ export async function GET(request: Request) {
     };
 
     // 获取今日实时统计（从 cloak_logs）
-    const today = new Date().toISOString().split('T')[0];
-    let todayWhereClause = "WHERE DATE(cl.timestamp) = ?";
+    const today = new Date().toISOString().split('T')[0]!;
+    let todayWhereClause = "WHERE DATE(cl.created_at) = ?";
     const todayParams: unknown[] = [today];
 
     if (params.offer_id) {
@@ -172,11 +172,12 @@ export async function GET(request: Request) {
     // 获取 Top 国家
     const topCountries = queryAll<{ country: string; visits: number }>(
       `SELECT
-        cl.country,
+        cl.ip_country as country,
         COUNT(*) as visits
       FROM cloak_logs cl
-      ${todayWhereClause.replace('DATE(cl.timestamp) = ?', 'cl.timestamp >= ?')}
-      GROUP BY cl.country
+      ${todayWhereClause.replace('DATE(cl.created_at) = ?', 'cl.created_at >= ?')}
+      AND cl.ip_country IS NOT NULL
+      GROUP BY cl.ip_country
       ORDER BY visits DESC
       LIMIT 10`,
       [startDate, ...todayParams.slice(1)]
@@ -197,7 +198,7 @@ export async function GET(request: Request) {
         COALESCE(SUM(ds.money_page_visits), 0) as money_page_visits,
         COALESCE(SUM(ds.safe_page_visits), 0) as safe_page_visits
       FROM offers o
-      LEFT JOIN daily_stats ds ON ds.offer_id = o.id AND ds.date BETWEEN ? AND ?
+      LEFT JOIN daily_stats ds ON ds.offer_id = o.id AND ds.stat_date BETWEEN ? AND ?
       WHERE o.user_id = ? AND o.is_deleted = 0
       GROUP BY o.id
       ORDER BY total_visits DESC`,

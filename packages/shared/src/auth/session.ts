@@ -1,4 +1,4 @@
-import { getRedis } from '../cache/index.js';
+import { getRedis } from '../cache';
 
 const SESSION_PREFIX = 'autoguard:session:';
 const SESSION_TTL = 7 * 24 * 60 * 60; // 7 天 (秒)

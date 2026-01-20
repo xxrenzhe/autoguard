@@ -23,6 +23,11 @@ app.get('/health', (_req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// 域名验证 ping 端点
+app.get('/__autoguard/ping', (_req, res) => {
+  res.status(200).type('text/plain').send('ok');
+});
+
 // 主入口处理
 app.use('*', handleCloakRequest);
 
@@ -113,17 +118,20 @@ async function handleCloakRequest(req: Request, res: Response): Promise<void> {
  * 解析 Offer
  */
 async function resolveOffer(req: Request): Promise<Offer | null> {
-  const routeType = req.headers['x-route-type'];
-
-  // 路径模式或子域名模式
+  // 优先检查子域名模式（包括 path 和 subdomain 路由）
   const subdomain = extractSubdomain(req);
   if (subdomain) {
     return getOfferBySubdomain(subdomain);
   }
 
   // 自定义域名模式
+  // X-Custom-Domain is now always set by Nginx, but we only use it when
+  // the host is not an autoguard.dev subdomain
   const customDomain = req.headers['x-custom-domain'];
-  if (typeof customDomain === 'string' && customDomain) {
+  const host = (req.headers.host || '').toLowerCase();
+
+  // Check if this is a custom domain (not *.autoguard.dev)
+  if (typeof customDomain === 'string' && customDomain && !host.endsWith('.autoguard.dev') && host !== 'autoguard.dev') {
     return getOfferByCustomDomain(customDomain.toLowerCase());
   }
 

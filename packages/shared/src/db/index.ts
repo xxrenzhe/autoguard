@@ -1,3 +1,3 @@
-export { getDatabase, closeDatabase, queryAll, queryOne, execute, batchInsert, transaction } from './connection.js';
-export { migrate, tableExists } from './schema.js';
-export { seed } from './seed.js';
+export { getDatabase, closeDatabase, queryAll, queryAll as query, queryOne, execute, batchInsert, transaction } from './connection';
+export { migrate, tableExists } from './schema';
+export { seed } from './seed';

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { queryOne, queryAll, execute } from '@autoguard/shared';
-import type { Offer, Page } from '@autoguard/shared';
+import type { Offer, Page, PageType, ContentSource, SafePageType, PageStatus } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 
 type Params = { params: Promise<{ id: string }> };
@@ -34,9 +34,33 @@ export async function GET(request: Request, { params }: Params) {
 
   // 获取页面列表
   const pages = queryAll<Page>(
-    'SELECT * FROM pages WHERE offer_id = ? ORDER BY variant ASC',
+    'SELECT * FROM pages WHERE offer_id = ? ORDER BY page_type ASC',
     [offerId]
   );
+
+  // Map page_type to variant and status for frontend compatibility
+  const mappedPages = pages.map((page) => {
+    // Map page_type -> variant (money = a, safe = b)
+    const variant = page.page_type === 'money' ? 'a' : 'b';
+    // Map status: generated/published -> ready for frontend
+    const frontendStatus = page.status === 'generated' || page.status === 'published' ? 'ready' : page.status;
+
+    return {
+      id: page.id,
+      offer_id: page.offer_id,
+      variant,
+      page_type: page.page_type,
+      source_type: page.content_source,
+      source_url: null, // Not stored in current schema
+      local_path: `/data/pages/${offer.subdomain}/${variant}/`,
+      status: frontendStatus,
+      meta: page.generation_params ? JSON.parse(page.generation_params) : null,
+      safe_page_type: page.safe_page_type,
+      competitors: page.competitors ? JSON.parse(page.competitors) : null,
+      created_at: page.created_at,
+      updated_at: page.updated_at,
+    };
+  });
 
   return NextResponse.json({
     success: true,
@@ -46,20 +70,18 @@ export async function GET(request: Request, { params }: Params) {
         brand_name: offer.brand_name,
         subdomain: offer.subdomain,
       },
-      pages: pages.map((page) => ({
-        ...page,
-        meta: page.meta ? JSON.parse(page.meta) : null,
-      })),
+      pages: mappedPages,
     },
   });
 }
 
 // POST /api/offers/[id]/pages - 创建或更新页面
 const createPageSchema = z.object({
-  variant: z.enum(['a', 'b']), // a = money page, b = safe page
-  source_type: z.enum(['scrape', 'upload', 'ai_generate']),
-  source_url: z.string().url().optional(),
-  status: z.enum(['pending', 'generating', 'ready', 'failed']).optional(),
+  page_type: z.enum(['money', 'safe'] as const),
+  content_source: z.enum(['scraped', 'generated', 'manual'] as const).optional(),
+  safe_page_type: z.enum(['review', 'tips', 'comparison', 'guide'] as const).optional(),
+  competitors: z.array(z.string()).optional(),
+  html_content: z.string().optional(),
 });
 
 export async function POST(request: Request, { params }: Params) {
@@ -91,25 +113,27 @@ export async function POST(request: Request, { params }: Params) {
     const body = await request.json();
     const data = createPageSchema.parse(body);
 
-    // 检查是否已存在该 variant 的页面
+    // 检查是否已存在该类型的页面
     const existingPage = queryOne<Page>(
-      'SELECT * FROM pages WHERE offer_id = ? AND variant = ?',
-      [offerId, data.variant]
+      'SELECT * FROM pages WHERE offer_id = ? AND page_type = ?',
+      [offerId, data.page_type]
     );
 
     if (existingPage) {
       // 更新现有页面
       execute(
         `UPDATE pages SET
-          source_type = ?,
-          source_url = ?,
-          status = ?,
+          content_source = COALESCE(?, content_source),
+          safe_page_type = COALESCE(?, safe_page_type),
+          competitors = COALESCE(?, competitors),
+          html_content = COALESCE(?, html_content),
           updated_at = CURRENT_TIMESTAMP
         WHERE id = ?`,
         [
-          data.source_type,
-          data.source_url || null,
-          data.status || 'pending',
+          data.content_source || null,
+          data.safe_page_type || null,
+          data.competitors ? JSON.stringify(data.competitors) : null,
+          data.html_content || null,
           existingPage.id,
         ]
       );
@@ -124,9 +148,16 @@ export async function POST(request: Request, { params }: Params) {
     } else {
       // 创建新页面
       const result = execute(
-        `INSERT INTO pages (offer_id, variant, source_type, source_url, status)
-         VALUES (?, ?, ?, ?, ?)`,
-        [offerId, data.variant, data.source_type, data.source_url || null, data.status || 'pending']
+        `INSERT INTO pages (offer_id, page_type, content_source, safe_page_type, competitors, html_content, status)
+         VALUES (?, ?, ?, ?, ?, ?, 'draft')`,
+        [
+          offerId,
+          data.page_type,
+          data.content_source || 'scraped',
+          data.safe_page_type || null,
+          data.competitors ? JSON.stringify(data.competitors) : null,
+          data.html_content || null,
+        ]
       );
 
       const newPage = queryOne<Page>('SELECT * FROM pages WHERE id = ?', [result.lastInsertRowid]);

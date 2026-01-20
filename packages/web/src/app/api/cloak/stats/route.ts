@@ -38,7 +38,7 @@ export async function GET(request: Request) {
       endDate = params.end_date;
     } else {
       const now = new Date();
-      endDate = now.toISOString().split('T')[0];
+      endDate = now.toISOString().split('T')[0]!;
 
       const daysMap: Record<string, number> = {
         '7d': 7,
@@ -46,14 +46,14 @@ export async function GET(request: Request) {
         '90d': 90,
         'all': 365 * 10,
       };
-      const days = daysMap[params.period];
+      const days = daysMap[params.period] ?? 7;
       const start = new Date(now);
       start.setDate(start.getDate() - days);
-      startDate = start.toISOString().split('T')[0];
+      startDate = start.toISOString().split('T')[0]!;
     }
 
     // Build query conditions
-    let whereClause = 'WHERE ds.date BETWEEN ? AND ?';
+    let whereClause = 'WHERE ds.stat_date BETWEEN ? AND ?';
     const whereParams: unknown[] = [startDate, endDate];
 
     if (params.offer_id) {
@@ -109,7 +109,7 @@ export async function GET(request: Request) {
         cl.decision_reason,
         COUNT(*) as count
       FROM cloak_logs cl
-      WHERE cl.timestamp >= ? AND cl.timestamp <= ?
+      WHERE cl.created_at >= ? AND cl.created_at <= ?
         AND cl.offer_id IN (SELECT id FROM offers WHERE user_id = ? AND is_deleted = 0)
       GROUP BY cl.decision_reason
       ORDER BY count DESC
@@ -133,13 +133,13 @@ export async function GET(request: Request) {
         SUM(CASE WHEN cl.decision_reason LIKE '%L5%' OR cl.decision_reason LIKE '%referer%' THEN 1 ELSE 0 END) as l5_blocks
       FROM cloak_logs cl
       WHERE cl.decision = 'safe'
-        AND cl.timestamp >= ? AND cl.timestamp <= ?
+        AND cl.created_at >= ? AND cl.created_at <= ?
         AND cl.offer_id IN (SELECT id FROM offers WHERE user_id = ? AND is_deleted = 0)`,
       [startDate, endDate + ' 23:59:59', user.userId]
     );
 
     // Get hourly distribution for today
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0]!;
     const hourlyDistribution = queryAll<{
       hour: number;
       total: number;
@@ -147,12 +147,12 @@ export async function GET(request: Request) {
       safe: number;
     }>(
       `SELECT
-        CAST(strftime('%H', cl.timestamp) AS INTEGER) as hour,
+        CAST(strftime('%H', cl.created_at) AS INTEGER) as hour,
         COUNT(*) as total,
         SUM(CASE WHEN cl.decision = 'money' THEN 1 ELSE 0 END) as money,
         SUM(CASE WHEN cl.decision = 'safe' THEN 1 ELSE 0 END) as safe
       FROM cloak_logs cl
-      WHERE DATE(cl.timestamp) = ?
+      WHERE DATE(cl.created_at) = ?
         AND cl.offer_id IN (SELECT id FROM offers WHERE user_id = ? AND is_deleted = 0)
       GROUP BY hour
       ORDER BY hour`,

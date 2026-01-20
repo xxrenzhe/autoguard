@@ -10,9 +10,9 @@ import type {
   DetectorResult,
   L2Details,
   IPLookupResult,
-} from '../types.js';
-import { getIPIntelligence } from '../services/ip-intelligence.js';
-import { defaultConfig, DATACENTER_ASNS } from '../config/index.js';
+} from '../types';
+import { getIPIntelligence } from '../services/ip-intelligence';
+import { defaultConfig, DATACENTER_ASNS } from '../config';
 
 export class L2IPIntelligenceDetector implements Detector {
   name = 'L2-IPIntelligence';

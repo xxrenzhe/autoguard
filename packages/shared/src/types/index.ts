@@ -292,3 +292,45 @@ export interface PaginationParams {
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 }
+
+/**
+ * Prompt 相关类型
+ */
+export interface PromptTemplate {
+  id: number;
+  name: string;
+  description: string | null;
+  category: PromptCategory;
+  active_version_id: number | null;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type PromptCategory = 'safe_page_review' | 'safe_page_tips' | 'safe_page_common';
+
+export interface PromptVersionRecord {
+  id: number;
+  prompt_id: number;
+  version: number;
+  content: string;
+  variables: string | null; // JSON
+  usage_count: number;
+  success_rate: number | null;
+  is_active: number;
+  created_at: string;
+  activated_at: string | null;
+  created_by: number | null;
+}
+
+/**
+ * 系统设置类型
+ */
+export interface Setting {
+  id: number;
+  key: string;
+  value: string | null;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}

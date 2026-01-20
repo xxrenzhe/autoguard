@@ -99,6 +99,7 @@ const addEntrySchema = z.discriminatedUnion('type', [
 // Bulk add schema
 const bulkAddSchema = z.object({
   type: z.enum(['ip', 'ip_range', 'ua', 'isp', 'geo']),
+  scope: z.enum(['global', 'user']).optional().default('user'),
   entries: z
     .array(
       z.object({
@@ -242,6 +243,18 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
+    const scope = body.scope || 'user'; // Default to user scope
+
+    // Check permission: only admin can write to global blacklist
+    if (scope === 'global' && !isAdmin) {
+      return NextResponse.json(
+        { error: { code: 'FORBIDDEN', message: 'Only administrators can modify global blacklist' } },
+        { status: 403 }
+      );
+    }
+
+    // Determine user_id based on scope
+    const targetUserId = scope === 'global' ? null : user.userId;
 
     // Check if bulk add
     if (body.entries) {
@@ -256,10 +269,12 @@ export async function POST(request: Request) {
         if (!value) continue;
 
         // Check if exists
-        const existing = queryOne<{ id: number; is_active: number }>(
-          `SELECT id, is_active FROM ${config.tableName} WHERE ${config.valueColumn} = ? AND user_id IS NULL`,
-          [value]
-        );
+        const existingQuery = targetUserId === null
+          ? `SELECT id, is_active FROM ${config.tableName} WHERE ${config.valueColumn} = ? AND user_id IS NULL`
+          : `SELECT id, is_active FROM ${config.tableName} WHERE ${config.valueColumn} = ? AND user_id = ?`;
+        const existingParams = targetUserId === null ? [value] : [value, targetUserId];
+
+        const existing = queryOne<{ id: number; is_active: number }>(existingQuery, existingParams);
 
         if (existing) {
           if (!existing.is_active) {
@@ -272,7 +287,7 @@ export async function POST(request: Request) {
           skipped++;
         } else {
           // Insert based on type
-          insertEntry(data.type, entry, null);
+          insertEntry(data.type, entry, targetUserId);
           added++;
         }
       }
@@ -299,11 +314,13 @@ export async function POST(request: Request) {
       value = data.country_code;
     }
 
-    // Check if exists (global)
-    const existing = queryOne<{ id: number; is_active: number }>(
-      `SELECT id, is_active FROM ${config.tableName} WHERE ${config.valueColumn} = ? AND user_id IS NULL`,
-      [value]
-    );
+    // Check if exists
+    const existingQuery = targetUserId === null
+      ? `SELECT id, is_active FROM ${config.tableName} WHERE ${config.valueColumn} = ? AND user_id IS NULL`
+      : `SELECT id, is_active FROM ${config.tableName} WHERE ${config.valueColumn} = ? AND user_id = ?`;
+    const existingParams = targetUserId === null ? [value] : [value, targetUserId];
+
+    const existing = queryOne<{ id: number; is_active: number }>(existingQuery, existingParams);
 
     if (existing) {
       if (existing.is_active) {
@@ -327,7 +344,7 @@ export async function POST(request: Request) {
     }
 
     // Insert new entry
-    const result = insertEntry(data.type, data as Record<string, unknown>, null);
+    const result = insertEntry(data.type, data as Record<string, unknown>, targetUserId);
 
     return NextResponse.json({
       success: true,

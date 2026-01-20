@@ -1,6 +1,7 @@
 /**
  * AI 内容生成器
  * 使用 Google Gemini 生成 Safe Page 内容
+ * 支持从数据库加载 Prompt 版本
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -25,6 +26,7 @@ export interface GenerateConfig {
   targetKeywords?: string[];
   language?: string;
   tone?: 'professional' | 'casual' | 'friendly';
+  affiliateLink?: string; // CTA 链接
 }
 
 /**
@@ -35,7 +37,87 @@ export interface GenerateResult {
   html?: string;
   title?: string;
   content?: string;
+  promptVersion?: number;
   error?: string;
+}
+
+/**
+ * 获取 Prompt 内容（优先从数据库，回退到默认）
+ */
+async function getPromptContent(pageType: SafePageType): Promise<{ content: string; version?: number }> {
+  // Use underscore naming to match seed.ts: safe_page_review, safe_page_tips, etc.
+  const promptName = `safe_page_${pageType}`;
+
+  try {
+    // 尝试从数据库获取激活的 Prompt 版本
+    const { getPrompt } = await import('@autoguard/shared');
+    const dbPrompt = getPrompt(promptName);
+    if (dbPrompt) {
+      return { content: dbPrompt, version: 1 };
+    }
+  } catch {
+    // 数据库不可用，使用默认
+  }
+
+  // 返回默认 Prompt
+  return { content: getDefaultPrompt(pageType) };
+}
+
+/**
+ * 获取默认 Prompt
+ */
+function getDefaultPrompt(pageType: SafePageType): string {
+  const prompts: Record<SafePageType, string> = {
+    review: `Write a comprehensive product review article about {{product_name}} ({{product_url}}).
+{{#description}}Product description: {{description}}{{/description}}
+
+The review should:
+- Be objective and balanced
+- Highlight key features and benefits
+- Discuss potential drawbacks honestly
+- Include a final recommendation
+- Be at least 800 words
+
+{{#cta_link}}Include a call-to-action button linking to: {{cta_link}}{{/cta_link}}`,
+
+    comparison: `Write a detailed comparison article between {{product_name}} and {{competitors}}.
+{{#description}}{{product_name}} description: {{description}}{{/description}}
+
+The comparison should:
+- Compare features, pricing, and use cases
+- Be fair and objective
+- Help readers make an informed decision
+- Include a comparison table
+- Be at least 1000 words
+
+{{#cta_link}}Include a call-to-action for {{product_name}} linking to: {{cta_link}}{{/cta_link}}`,
+
+    tips: `Write an educational tips article about how to best use {{product_name}} ({{product_url}}).
+{{#description}}Product description: {{description}}{{/description}}
+
+The article should:
+- Include 7-10 practical tips
+- Explain each tip clearly with examples
+- Help users get the most value
+- Be beginner-friendly
+- Be at least 800 words
+
+{{#cta_link}}Include a call-to-action linking to: {{cta_link}}{{/cta_link}}`,
+
+    guide: `Write a comprehensive beginner's guide for {{product_name}} ({{product_url}}).
+{{#description}}Product description: {{description}}{{/description}}
+
+The guide should:
+- Explain what the product is and who it's for
+- Cover getting started steps
+- Include best practices
+- Address common questions
+- Be at least 1000 words
+
+{{#cta_link}}Include a call-to-action linking to: {{cta_link}}{{/cta_link}}`,
+  };
+
+  return prompts[pageType] || prompts.review;
 }
 
 /**
@@ -51,12 +133,16 @@ export async function generateSafePage(config: GenerateConfig): Promise<Generate
     targetKeywords = [],
     language = 'en',
     tone = 'professional',
+    affiliateLink,
   } = config;
 
   try {
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
 
-    const prompt = buildPrompt({
+    // 获取 Prompt（优先数据库版本）
+    const { content: promptTemplate, version: promptVersion } = await getPromptContent(pageType);
+
+    const prompt = buildPrompt(promptTemplate, {
       brandName,
       brandUrl,
       brandDescription,
@@ -65,6 +151,7 @@ export async function generateSafePage(config: GenerateConfig): Promise<Generate
       targetKeywords,
       language,
       tone,
+      affiliateLink,
     });
 
     const result = await model.generateContent(prompt);
@@ -72,13 +159,14 @@ export async function generateSafePage(config: GenerateConfig): Promise<Generate
     const text = response.text();
 
     // 解析生成的内容
-    const { title, content, html } = parseGeneratedContent(text, brandName);
+    const { title, content, html } = parseGeneratedContent(text, brandName, affiliateLink);
 
     return {
       success: true,
       html,
       title,
       content,
+      promptVersion,
     };
   } catch (error) {
     return {
@@ -91,78 +179,50 @@ export async function generateSafePage(config: GenerateConfig): Promise<Generate
 /**
  * 构建提示词
  */
-function buildPrompt(config: {
-  brandName: string;
-  brandUrl: string;
-  brandDescription?: string;
-  pageType: SafePageType;
-  competitors: string[];
-  targetKeywords: string[];
-  language: string;
-  tone: string;
-}): string {
+function buildPrompt(
+  template: string,
+  config: {
+    brandName: string;
+    brandUrl: string;
+    brandDescription?: string;
+    pageType: SafePageType;
+    competitors: string[];
+    targetKeywords: string[];
+    language: string;
+    tone: string;
+    affiliateLink?: string;
+  }
+): string {
   const {
     brandName,
     brandUrl,
     brandDescription,
-    pageType,
     competitors,
     targetKeywords,
     language,
     tone,
+    affiliateLink,
   } = config;
 
-  let basePrompt = '';
+  // Replace template variables
+  let prompt = template
+    .replace(/\{\{product_name\}\}/g, brandName)
+    .replace(/\{\{product_url\}\}/g, brandUrl)
+    .replace(/\{\{competitors\}\}/g, competitors.length > 0 ? competitors.join(', ') : 'similar products');
 
-  switch (pageType) {
-    case 'review':
-      basePrompt = `Write a comprehensive product review article about ${brandName} (${brandUrl}).
-${brandDescription ? `Product description: ${brandDescription}` : ''}
+  // Handle conditional sections
+  if (brandDescription) {
+    prompt = prompt.replace(/\{\{#description\}\}(.*?)\{\{\/description\}\}/gs, `$1`);
+    prompt = prompt.replace(/\{\{description\}\}/g, brandDescription);
+  } else {
+    prompt = prompt.replace(/\{\{#description\}\}.*?\{\{\/description\}\}/gs, '');
+  }
 
-The review should:
-- Be objective and balanced
-- Highlight key features and benefits
-- Discuss potential drawbacks honestly
-- Include a final recommendation
-- Be at least 800 words`;
-      break;
-
-    case 'comparison':
-      const competitorList = competitors.length > 0 ? competitors.join(', ') : 'similar products';
-      basePrompt = `Write a detailed comparison article between ${brandName} and ${competitorList}.
-${brandDescription ? `${brandName} description: ${brandDescription}` : ''}
-
-The comparison should:
-- Compare features, pricing, and use cases
-- Be fair and objective
-- Help readers make an informed decision
-- Include a comparison table
-- Be at least 1000 words`;
-      break;
-
-    case 'tips':
-      basePrompt = `Write an educational tips article about how to best use ${brandName} (${brandUrl}).
-${brandDescription ? `Product description: ${brandDescription}` : ''}
-
-The article should:
-- Include 7-10 practical tips
-- Explain each tip clearly with examples
-- Help users get the most value
-- Be beginner-friendly
-- Be at least 800 words`;
-      break;
-
-    case 'guide':
-      basePrompt = `Write a comprehensive beginner's guide for ${brandName} (${brandUrl}).
-${brandDescription ? `Product description: ${brandDescription}` : ''}
-
-The guide should:
-- Explain what the product is and who it's for
-- Cover getting started steps
-- Include best practices
-- Address common questions
-- Be at least 1000 words`;
-      break;
+  if (affiliateLink) {
+    prompt = prompt.replace(/\{\{#cta_link\}\}(.*?)\{\{\/cta_link\}\}/gs, `$1`);
+    prompt = prompt.replace(/\{\{cta_link\}\}/g, affiliateLink);
+  } else {
+    prompt = prompt.replace(/\{\{#cta_link\}\}.*?\{\{\/cta_link\}\}/gs, '');
   }
 
   const keywordsSection =
@@ -170,7 +230,7 @@ The guide should:
       ? `\n\nNaturally incorporate these keywords: ${targetKeywords.join(', ')}`
       : '';
 
-  return `${basePrompt}
+  return `${prompt}
 ${keywordsSection}
 
 Language: ${language === 'en' ? 'English' : language}
@@ -178,7 +238,6 @@ Tone: ${tone}
 
 Format the output as HTML with proper headings (h1, h2, h3), paragraphs, and lists.
 Include a clear, SEO-friendly title in an h1 tag.
-Do not include any promotional or affiliate links in the content.
 Make the content informative and genuinely helpful to readers.
 
 Output ONLY the HTML content, starting with <article> and ending with </article>.`;
@@ -189,7 +248,8 @@ Output ONLY the HTML content, starting with <article> and ending with </article>
  */
 function parseGeneratedContent(
   text: string,
-  brandName: string
+  brandName: string,
+  affiliateLink?: string
 ): { title: string; content: string; html: string } {
   // 提取 article 标签内容
   const articleMatch = text.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
@@ -202,7 +262,7 @@ function parseGeneratedContent(
     : `${brandName} Review`;
 
   // 构建完整 HTML
-  const html = buildFullHtml(title, articleContent || text);
+  const html = buildFullHtml(title, articleContent || text, affiliateLink);
 
   return {
     title,
@@ -214,7 +274,25 @@ function parseGeneratedContent(
 /**
  * 构建完整 HTML 页面
  */
-function buildFullHtml(title: string, content: string): string {
+function buildFullHtml(title: string, content: string, affiliateLink?: string): string {
+  // 如果有 affiliate link，添加 CTA 按钮样式
+  const ctaStyle = affiliateLink ? `
+    .cta-button {
+      display: inline-block;
+      background: #3b82f6;
+      color: white;
+      padding: 12px 24px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      margin: 1.5rem 0;
+      transition: background 0.2s;
+    }
+    .cta-button:hover {
+      background: #2563eb;
+      text-decoration: none;
+    }` : '';
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -304,7 +382,7 @@ function buildFullHtml(title: string, content: string): string {
       color: #888;
       font-size: 0.9rem;
       margin-bottom: 2rem;
-    }
+    }${ctaStyle}
     @media (max-width: 640px) {
       h1 { font-size: 1.8rem; }
       h2 { font-size: 1.4rem; }

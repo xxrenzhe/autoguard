@@ -9,9 +9,9 @@ import type {
   DetectionContext,
   DetectorResult,
   L3Details,
-} from '../types.js';
-import { getIPIntelligence } from '../services/ip-intelligence.js';
-import { HIGH_RISK_COUNTRIES } from '../config/index.js';
+} from '../types';
+import { getIPIntelligence } from '../services/ip-intelligence';
+import { HIGH_RISK_COUNTRIES } from '../config';
 
 export class L3GeoDetector implements Detector {
   name = 'L3-Geo';
@@ -47,8 +47,23 @@ export class L3GeoDetector implements Detector {
     let score = 100;
     const reasons: string[] = [];
 
-    // 无法获取地理信息，降低分数
+    // 无法获取地理信息
     if (!ipInfo.country) {
+      // If target countries are configured, unknown location = fail (redirect to Safe)
+      // This is a security measure: don't show Money page to unknown origins
+      if (context.targetCountries && context.targetCountries.length > 0) {
+        score = 0;
+        details.passed = false;
+        reasons.push('Cannot determine location (target regions configured)');
+        return {
+          passed: false,
+          score,
+          reason: reasons.join(', '),
+          details,
+        };
+      }
+
+      // No target countries configured, allow with reduced score
       score -= 20;
       reasons.push('Cannot determine location');
       return {

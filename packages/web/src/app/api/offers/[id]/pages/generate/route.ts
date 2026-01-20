@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { queryOne, execute } from '@autoguard/shared';
+import { queryOne, execute, getRedis, CacheKeys } from '@autoguard/shared';
 import type { Offer, Page } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 
@@ -11,6 +11,7 @@ const generatePageSchema = z.object({
   variant: z.enum(['a', 'b']), // a = money page, b = safe page
   action: z.enum(['scrape', 'ai_generate']),
   source_url: z.string().url().optional(), // 仅 scrape 需要
+  safe_page_type: z.enum(['review', 'tips', 'comparison', 'guide']).optional(), // AI 生成时可选
 });
 
 export async function POST(request: Request, { params }: Params) {
@@ -44,6 +45,9 @@ export async function POST(request: Request, { params }: Params) {
 
     // 确定源 URL
     let sourceUrl: string;
+    // 将 variant a/b 映射到 page_type money/safe
+    const pageType = data.variant === 'a' ? 'money' : 'safe';
+
     if (data.action === 'scrape') {
       if (data.variant === 'a') {
         // Money page: 使用 brand_url 或提供的 URL
@@ -59,55 +63,44 @@ export async function POST(request: Request, { params }: Params) {
 
     // 检查或创建页面记录
     let page = queryOne<Page>(
-      'SELECT * FROM pages WHERE offer_id = ? AND variant = ?',
-      [offerId, data.variant]
+      'SELECT * FROM pages WHERE offer_id = ? AND page_type = ?',
+      [offerId, pageType]
     );
 
     if (page) {
       // 更新状态为生成中
       execute(
         `UPDATE pages SET
-          source_type = ?,
-          source_url = ?,
+          content_source = ?,
           status = 'generating',
           updated_at = CURRENT_TIMESTAMP
         WHERE id = ?`,
-        [data.action === 'scrape' ? 'scrape' : 'ai_generate', sourceUrl, page.id]
+        [data.action === 'scrape' ? 'scraped' : 'generated', page.id]
       );
     } else {
       // 创建新页面记录
       const result = execute(
-        `INSERT INTO pages (offer_id, variant, source_type, source_url, status)
-         VALUES (?, ?, ?, ?, 'generating')`,
-        [offerId, data.variant, data.action === 'scrape' ? 'scrape' : 'ai_generate', sourceUrl]
+        `INSERT INTO pages (offer_id, page_type, content_source, status)
+         VALUES (?, ?, ?, 'generating')`,
+        [offerId, pageType, data.action === 'scrape' ? 'scraped' : 'generated']
       );
       page = queryOne<Page>('SELECT * FROM pages WHERE id = ?', [result.lastInsertRowid]);
     }
 
-    // 触发异步生成任务
-    // 在生产环境中，这里应该将任务放入队列（如 Redis）
-    // 然后由后台 worker 处理
-    // 这里简化处理，直接返回生成中状态
-
-    // TODO: 实际的页面生成逻辑
-    // 可以通过以下方式实现:
-    // 1. 将任务推送到 Redis 队列
-    // 2. Page Generator worker 消费队列并处理
-    // 3. 处理完成后更新数据库状态
-
-    // 模拟：将生成任务信息存入 Redis
-    // 实际实现时取消注释并配置 Redis
-    /*
-    import { redis } from '@autoguard/shared';
-    await redis.lpush('page_generation_queue', JSON.stringify({
+    // 触发异步生成任务 - 推送到 Redis 队列
+    const redis = getRedis();
+    const job = {
       pageId: page!.id,
       offerId,
       variant: data.variant,
       action: data.action,
       sourceUrl,
       subdomain: offer.subdomain,
-    }));
-    */
+      safePageType: data.safe_page_type,
+      affiliateLink: offer.affiliate_link,
+    };
+
+    await redis.lpush(CacheKeys.queue.pageGeneration, JSON.stringify(job));
 
     return NextResponse.json({
       success: true,

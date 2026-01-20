@@ -10,8 +10,8 @@ import type {
   DetectorResult,
   L5Details,
   TrackingParams,
-} from '../types.js';
-import { SUSPICIOUS_REFERER_DOMAINS, defaultConfig } from '../config/index.js';
+} from '../types';
+import { SUSPICIOUS_REFERER_DOMAINS, defaultConfig } from '../config';
 
 export class L5RefererDetector implements Detector {
   name = 'L5-Referer';

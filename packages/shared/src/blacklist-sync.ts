@@ -4,15 +4,15 @@
  * 支持全量同步和增量同步
  */
 
-import { getRedis, CacheKeys } from './cache/index.js';
-import { queryAll } from './db/index.js';
+import { getRedis, CacheKeys } from './cache';
+import { queryAll } from './db';
 import type {
   BlacklistIP,
   BlacklistIPRange,
   BlacklistUA,
   BlacklistISP,
   BlacklistGeo,
-} from './types/index.js';
+} from './types';
 
 // 同步配置
 const SYNC_BATCH_SIZE = 1000;
@@ -336,7 +336,7 @@ export async function cleanupExpiredBlacklists(): Promise<{
 
   // 标记为非活跃（软删除）
   if (expiredIPs.length > 0) {
-    const { execute } = await import('./db/index.js');
+    const { execute } = await import('./db');
     for (const entry of expiredIPs) {
       execute(
         `UPDATE blacklist_ips SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
@@ -347,7 +347,7 @@ export async function cleanupExpiredBlacklists(): Promise<{
   }
 
   if (expiredRanges.length > 0) {
-    const { execute } = await import('./db/index.js');
+    const { execute } = await import('./db');
     for (const entry of expiredRanges) {
       execute(
         `UPDATE blacklist_ip_ranges SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,

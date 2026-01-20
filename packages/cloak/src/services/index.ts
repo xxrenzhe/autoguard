@@ -1,1 +1,1 @@
-export { getIPIntelligence, initMaxMind, closeMaxMind } from './ip-intelligence.js';
+export { getIPIntelligence, initMaxMind, closeMaxMind } from './ip-intelligence';

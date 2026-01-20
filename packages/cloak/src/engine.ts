@@ -9,10 +9,10 @@ import type {
   DetectionContext,
   DetectionDetails,
   CloakConfig,
-} from './types.js';
-import { l1Detector, l2Detector, l3Detector, l4Detector, l5Detector } from './detectors/index.js';
-import { defaultConfig } from './config/index.js';
-import { initMaxMind } from './services/ip-intelligence.js';
+} from './types';
+import { l1Detector, l2Detector, l3Detector, l4Detector, l5Detector } from './detectors';
+import { defaultConfig } from './config';
+import { initMaxMind } from './services/ip-intelligence';
 
 // 初始化标志
 let engineInitialized = false;

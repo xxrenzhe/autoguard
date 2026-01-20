@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { queryAll, queryOne, execute, generateSubdomain } from '@autoguard/shared';
+import { queryAll, queryOne, execute, generateSubdomain, getRedis, CacheKeys } from '@autoguard/shared';
 import type { Offer } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 
@@ -113,6 +113,34 @@ export async function POST(request: Request) {
     );
 
     const offerId = result.lastInsertRowid;
+
+    // 创建 Money Page 记录
+    const pageResult = execute(
+      `INSERT INTO pages (offer_id, page_type, content_source, status)
+       VALUES (?, 'money', 'scraped', 'generating')`,
+      [offerId]
+    );
+    const pageId = pageResult.lastInsertRowid;
+
+    // 自动入队抓取任务（按文档设计）
+    try {
+      const redis = getRedis();
+      const job = {
+        pageId: Number(pageId),
+        offerId: Number(offerId),
+        variant: 'a' as const,
+        action: 'scrape' as const,
+        sourceUrl: data.brand_url,
+        subdomain,
+      };
+      await redis.lpush(CacheKeys.queue.pageGeneration, JSON.stringify(job));
+
+      // 更新 Offer 状态为 scraping
+      execute('UPDATE offers SET scrape_status = ? WHERE id = ?', ['scraping', offerId]);
+    } catch (queueError) {
+      console.error('Failed to queue scrape job:', queueError);
+      // 非阻塞：队列失败不影响 Offer 创建
+    }
 
     // 获取创建的 Offer
     const offer = queryOne<Offer>('SELECT * FROM offers WHERE id = ?', [offerId]);

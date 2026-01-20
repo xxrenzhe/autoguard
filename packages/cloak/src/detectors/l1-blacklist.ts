@@ -11,9 +11,9 @@ import type {
   DetectionContext,
   DetectorResult,
   L1Details,
-} from '../types.js';
+} from '../types';
 import { ipInCIDR } from '@autoguard/shared';
-import { getIPIntelligence } from '../services/ip-intelligence.js';
+import { getIPIntelligence } from '../services/ip-intelligence';
 
 export class L1BlacklistDetector implements Detector {
   name = 'L1-Blacklist';

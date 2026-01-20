@@ -10,7 +10,8 @@ let db: Database.Database | null = null;
 export function getDatabase(): Database.Database {
   if (db) return db;
 
-  const dbPath = process.env.SQLITE_DB_PATH || './data/db/autoguard.db';
+  // Support both SQLITE_DB_PATH and DATABASE_PATH (docker-compose uses DATABASE_PATH)
+  const dbPath = process.env.SQLITE_DB_PATH || process.env.DATABASE_PATH || './data/db/autoguard.db';
 
   // 确保目录存在
   const dbDir = path.dirname(dbPath);

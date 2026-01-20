@@ -34,7 +34,7 @@ export async function verifyToken(token: string): Promise<JWTPayload | null> {
     const secret = new TextEncoder().encode(JWT_SECRET);
     const { payload } = await jose.jwtVerify(token, secret);
 
-    return payload as JWTPayload;
+    return payload as unknown as JWTPayload;
   } catch {
     return null;
   }
@@ -53,7 +53,7 @@ export async function verifyTokenEdge(token: string): Promise<JWTPayload | null>
 export function decodeToken(token: string): JWTPayload | null {
   try {
     const payload = jose.decodeJwt(token);
-    return payload as JWTPayload;
+    return payload as unknown as JWTPayload;
   } catch {
     return null;
   }

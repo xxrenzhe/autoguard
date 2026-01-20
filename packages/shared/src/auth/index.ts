@@ -1,6 +1,6 @@
 // Auth 模块导出
-export { hashPassword, verifyPassword, generateRandomPassword, validatePasswordStrength } from './password.js';
-export { signToken, verifyToken, verifyTokenEdge, decodeToken, extractTokenFromHeader, isTokenExpiringSoon, type JWTPayload } from './jwt.js';
+export { hashPassword, verifyPassword, generateRandomPassword, validatePasswordStrength } from './password';
+export { signToken, verifyToken, verifyTokenEdge, decodeToken, extractTokenFromHeader, isTokenExpiringSoon, type JWTPayload } from './jwt';
 export {
   generateSessionId,
   createSession,
@@ -10,4 +10,4 @@ export {
   deleteAllUserSessions,
   getUserSessions,
   type SessionData,
-} from './session.js';
+} from './session';

@@ -9,7 +9,7 @@ export default defineConfig({
     'utils/index': 'src/utils/index.ts',
   },
   format: ['esm'],
-  dts: true,
+  dts: false, // Use tsc for declarations instead
   splitting: false,
   sourcemap: true,
   clean: true,

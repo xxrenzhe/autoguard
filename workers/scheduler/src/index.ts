@@ -30,7 +30,9 @@ interface TaskStatus {
   errorCount: number;
 }
 
-const taskStatuses: Record<string, TaskStatus> = {
+type TaskName = 'blacklistSync' | 'expiryCleanup' | 'statsAggregation';
+
+const taskStatuses: Record<TaskName, TaskStatus> = {
   blacklistSync: { lastRun: null, lastSuccess: null, lastError: null, runCount: 0, errorCount: 0 },
   expiryCleanup: { lastRun: null, lastSuccess: null, lastError: null, runCount: 0, errorCount: 0 },
   statsAggregation: { lastRun: null, lastSuccess: null, lastError: null, runCount: 0, errorCount: 0 },
@@ -62,7 +64,7 @@ async function init(): Promise<void> {
  * 黑名单同步任务
  */
 async function runBlacklistSync(): Promise<void> {
-  const taskName = 'blacklistSync';
+  const taskName: TaskName = 'blacklistSync';
   taskStatuses[taskName].lastRun = new Date();
   taskStatuses[taskName].runCount++;
 
@@ -84,7 +86,7 @@ async function runBlacklistSync(): Promise<void> {
  * 过期清理任务
  */
 async function runExpiryCleanup(): Promise<void> {
-  const taskName = 'expiryCleanup';
+  const taskName: TaskName = 'expiryCleanup';
   taskStatuses[taskName].lastRun = new Date();
   taskStatuses[taskName].runCount++;
 
@@ -106,7 +108,7 @@ async function runExpiryCleanup(): Promise<void> {
  * 统计聚合任务
  */
 async function runStatsAggregation(): Promise<void> {
-  const taskName = 'statsAggregation';
+  const taskName: TaskName = 'statsAggregation';
   taskStatuses[taskName].lastRun = new Date();
   taskStatuses[taskName].runCount++;
 
@@ -123,8 +125,8 @@ async function runStatsAggregation(): Promise<void> {
           user_id,
           offer_id,
           COUNT(*) as total_visits,
-          SUM(CASE WHEN decision = 'money' THEN 1 ELSE 0 END) as money_visits,
-          SUM(CASE WHEN decision = 'safe' THEN 1 ELSE 0 END) as safe_visits,
+          SUM(CASE WHEN decision = 'money' THEN 1 ELSE 0 END) as money_page_visits,
+          SUM(CASE WHEN decision = 'safe' THEN 1 ELSE 0 END) as safe_page_visits,
           COUNT(DISTINCT ip_address) as unique_ips,
           AVG(fraud_score) as avg_fraud_score,
           SUM(CASE WHEN blocked_at_layer = 'L1' THEN 1 ELSE 0 END) as blocked_l1,
@@ -142,8 +144,8 @@ async function runStatsAggregation(): Promise<void> {
       user_id: number;
       offer_id: number;
       total_visits: number;
-      money_visits: number;
-      safe_visits: number;
+      money_page_visits: number;
+      safe_page_visits: number;
       unique_ips: number;
       avg_fraud_score: number;
       blocked_l1: number;
@@ -158,19 +160,19 @@ async function runStatsAggregation(): Promise<void> {
     const upsertStmt = db.prepare(`
       INSERT INTO daily_stats (
         user_id, offer_id, stat_date,
-        total_visits, money_visits, safe_visits, unique_ips, avg_fraud_score,
+        total_visits, money_page_visits, safe_page_visits, unique_ips, avg_fraud_score,
         blocked_l1, blocked_l2, blocked_l3, blocked_l4, blocked_l5, blocked_timeout,
         updated_at
       ) VALUES (
         @user_id, @offer_id, @stat_date,
-        @total_visits, @money_visits, @safe_visits, @unique_ips, @avg_fraud_score,
+        @total_visits, @money_page_visits, @safe_page_visits, @unique_ips, @avg_fraud_score,
         @blocked_l1, @blocked_l2, @blocked_l3, @blocked_l4, @blocked_l5, @blocked_timeout,
         CURRENT_TIMESTAMP
       )
       ON CONFLICT (user_id, offer_id, stat_date) DO UPDATE SET
         total_visits = excluded.total_visits,
-        money_visits = excluded.money_visits,
-        safe_visits = excluded.safe_visits,
+        money_page_visits = excluded.money_page_visits,
+        safe_page_visits = excluded.safe_page_visits,
         unique_ips = excluded.unique_ips,
         avg_fraud_score = excluded.avg_fraud_score,
         blocked_l1 = excluded.blocked_l1,

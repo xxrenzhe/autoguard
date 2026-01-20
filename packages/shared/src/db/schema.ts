@@ -1,4 +1,4 @@
-import { getDatabase } from './connection.js';
+import { getDatabase } from './connection';
 
 /**
  * 数据库 Schema 定义
@@ -292,8 +292,8 @@ CREATE TABLE IF NOT EXISTS daily_stats (
     stat_date DATE NOT NULL,
 
     total_visits INTEGER DEFAULT 0,
-    money_visits INTEGER DEFAULT 0,
-    safe_visits INTEGER DEFAULT 0,
+    money_page_visits INTEGER DEFAULT 0,
+    safe_page_visits INTEGER DEFAULT 0,
 
     unique_ips INTEGER DEFAULT 0,
     avg_fraud_score REAL DEFAULT 0,
@@ -315,6 +315,110 @@ CREATE TABLE IF NOT EXISTS daily_stats (
 
 CREATE INDEX IF NOT EXISTS idx_daily_stats_date ON daily_stats(stat_date);
 CREATE INDEX IF NOT EXISTS idx_daily_stats_user_date ON daily_stats(user_id, stat_date);
+
+-- ==========================================
+-- Prompt 模板表
+-- ==========================================
+CREATE TABLE IF NOT EXISTS prompts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    -- 基本信息
+    name TEXT NOT NULL UNIQUE,           -- Prompt 名称（唯一标识）
+    description TEXT,                     -- 描述说明
+    category TEXT NOT NULL,              -- 分类: 'safe_page_review', 'safe_page_tips'
+
+    -- 当前激活版本
+    active_version_id INTEGER,           -- 当前激活的版本 ID
+
+    -- 状态
+    is_active INTEGER DEFAULT 1,         -- 是否启用
+
+    -- 时间戳
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (active_version_id) REFERENCES prompt_versions(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_prompts_name ON prompts(name);
+CREATE INDEX IF NOT EXISTS idx_prompts_category ON prompts(category);
+
+-- ==========================================
+-- Prompt 版本表
+-- ==========================================
+CREATE TABLE IF NOT EXISTS prompt_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prompt_id INTEGER NOT NULL,
+
+    -- 版本信息
+    version INTEGER NOT NULL,            -- 版本号: 1, 2, 3...
+    content TEXT NOT NULL,               -- Prompt 内容（支持变量占位符）
+
+    -- 变量定义
+    variables TEXT,                      -- JSON: 支持的变量列表及说明
+
+    -- 使用统计
+    usage_count INTEGER DEFAULT 0,       -- 使用次数
+    success_rate REAL,                   -- 成功率
+
+    -- 状态
+    is_active INTEGER DEFAULT 0,         -- 是否激活
+
+    -- 时间戳
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    activated_at TIMESTAMP,              -- 激活时间
+
+    -- 创建者
+    created_by INTEGER,
+
+    FOREIGN KEY (prompt_id) REFERENCES prompts(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id),
+    UNIQUE(prompt_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_prompt_versions_prompt ON prompt_versions(prompt_id);
+CREATE INDEX IF NOT EXISTS idx_prompt_versions_active ON prompt_versions(is_active);
+
+-- ==========================================
+-- 系统设置表
+-- ==========================================
+CREATE TABLE IF NOT EXISTS settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL UNIQUE,
+    value TEXT,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_settings_key ON settings(key);
+
+-- ==========================================
+-- 系统设置表（详细版）
+-- ==========================================
+CREATE TABLE IF NOT EXISTS system_settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,                     -- NULL = 全局设置
+    category TEXT NOT NULL,              -- 'ai', 'proxy', 'system', 'cloak'
+    key TEXT NOT NULL,
+    value TEXT,                          -- 普通值
+    encrypted_value TEXT,                -- 加密值（敏感数据）
+    data_type TEXT DEFAULT 'string',     -- 'string', 'number', 'boolean', 'json'
+    is_sensitive INTEGER DEFAULT 0,      -- 是否敏感数据
+    is_required INTEGER DEFAULT 0,       -- 是否必填
+    validation_status TEXT,              -- 验证状态
+    validation_message TEXT,             -- 验证消息
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE(user_id, category, key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_system_settings_user ON system_settings(user_id);
+CREATE INDEX IF NOT EXISTS idx_system_settings_category ON system_settings(category);
+CREATE INDEX IF NOT EXISTS idx_system_settings_key ON system_settings(key);
 `;
 
 /**

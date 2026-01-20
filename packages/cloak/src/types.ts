@@ -155,7 +155,7 @@ export interface DetectorResult {
   passed: boolean;
   score: number;
   reason?: string;
-  details: Record<string, unknown>;
+  details: L1Details | L2Details | L3Details | L4Details | L5Details | Record<string, unknown>;
 }
 
 /**

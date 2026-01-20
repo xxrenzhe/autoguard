@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { queryOne, execute, getRedis } from '@autoguard/shared';
+import { queryOne, execute, getRedis, CacheKeys } from '@autoguard/shared';
 import type { Offer } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 
@@ -61,14 +61,19 @@ export async function PATCH(request: Request, { params }: Params) {
       );
     }
 
-    // Update Redis cache for fast lookup
+    // Invalidate Offer cache so Cloak Worker picks up changes immediately
     try {
       const redis = getRedis();
-      const cacheKey = `autoguard:offer:${offer.subdomain}:cloak`;
-      await redis.set(cacheKey, data.enabled ? '1' : '0', 'EX', 3600);
+      // Clear the offer subdomain cache (this is what cloak worker reads)
+      await redis.del(CacheKeys.offer.bySubdomain(offer.subdomain));
+      // Also clear by id if cached
+      await redis.del(CacheKeys.offer.byId(offerId));
+      // Clear custom domain cache if applicable
+      if (offer.custom_domain) {
+        await redis.del(CacheKeys.offer.byDomain(offer.custom_domain));
+      }
     } catch (redisError) {
-      console.error('Redis cache update failed:', redisError);
-      // Continue even if Redis fails
+      console.error('Redis cache invalidation failed:', redisError);
     }
 
     // Return updated offer

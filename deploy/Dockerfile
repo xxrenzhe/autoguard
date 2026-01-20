@@ -20,6 +20,7 @@ COPY packages/web/package.json ./packages/web/
 COPY workers/cloak-worker/package.json ./workers/cloak-worker/
 COPY workers/log-writer/package.json ./workers/log-writer/
 COPY workers/scheduler/package.json ./workers/scheduler/
+COPY workers/queue-worker/package.json ./workers/queue-worker/
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
@@ -71,6 +72,7 @@ COPY packages/web/package.json ./packages/web/
 COPY workers/cloak-worker/package.json ./workers/cloak-worker/
 COPY workers/log-writer/package.json ./workers/log-writer/
 COPY workers/scheduler/package.json ./workers/scheduler/
+COPY workers/queue-worker/package.json ./workers/queue-worker/
 
 RUN pnpm install --frozen-lockfile --prod
 
@@ -83,6 +85,7 @@ COPY --from=builder /app/packages/web/public ./packages/web/public
 COPY --from=builder /app/workers/cloak-worker/dist ./workers/cloak-worker/dist
 COPY --from=builder /app/workers/log-writer/dist ./workers/log-writer/dist
 COPY --from=builder /app/workers/scheduler/dist ./workers/scheduler/dist
+COPY --from=builder /app/workers/queue-worker/dist ./workers/queue-worker/dist
 
 # Copy configuration files
 COPY deploy/nginx/nginx.conf /etc/nginx/nginx.conf

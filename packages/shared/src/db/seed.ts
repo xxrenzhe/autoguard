@@ -1,5 +1,5 @@
-import { getDatabase, queryOne, execute } from './connection.js';
-import { hashPassword } from '../auth/password.js';
+import { getDatabase, queryOne, execute } from './connection';
+import { hashPassword } from '../auth/password';
 
 /**
  * 检查是否已有种子数据
@@ -186,6 +186,134 @@ function seedDefaultISPBlacklist(): void {
 }
 
 /**
+ * 种子数据 - 默认 Prompt 模板
+ */
+function seedDefaultPrompts(): void {
+  const prompts = [
+    {
+      name: 'safe_page_review',
+      category: 'safe_page_review',
+      description: '产品对比评测页面生成',
+      content: `你是一位专业的产品评测作家。请根据以下信息生成一篇客观、专业的产品对比评测文章。
+
+**品牌信息：**
+- 主推品牌：{{brand_name}}
+- 品牌官网：{{brand_url}}
+- 品牌描述：{{brand_description}}
+
+**竞品信息：**
+{{competitors}}
+
+**要求：**
+1. 文章长度：1500-2500 字
+2. 结构包含：摘要、功能对比、价格对比、优缺点分析、结论推荐
+3. 语气客观，避免过度营销
+4. 在适当位置自然插入 CTA（使用 [CTA_BUTTON] 标记）
+5. 突出主推品牌的优势，但不贬低竞品
+6. 使用 Markdown 格式
+
+**输出语言：** {{target_language}}`,
+    },
+    {
+      name: 'safe_page_tips',
+      category: 'safe_page_tips',
+      description: '使用技巧页面生成',
+      content: `你是一位专业的产品教程作家。请根据以下信息生成一篇实用的产品使用技巧文章。
+
+**品牌信息：**
+- 品牌名称：{{brand_name}}
+- 品牌描述：{{brand_description}}
+
+**要求：**
+1. 文章长度：1200-2000 字
+2. 包含 5-10 个实用技巧
+3. 每个技巧配有简要说明和操作步骤
+4. 在文章开头和结尾自然插入 CTA（使用 [CTA_BUTTON] 标记）
+5. 语气亲切、易懂
+6. 使用 Markdown 格式，包含合适的标题层级
+
+**输出语言：** {{target_language}}`,
+    },
+    {
+      name: 'safe_page_title',
+      category: 'safe_page_common',
+      description: '页面标题生成',
+      content: `为以下产品生成一个 SEO 友好的页面标题（60 字符以内）：
+
+产品名称：{{brand_name}}
+页面类型：{{page_type}}
+
+要求：
+1. 包含产品名称
+2. 吸引点击
+3. 适合搜索引擎优化`,
+    },
+    {
+      name: 'safe_page_meta',
+      category: 'safe_page_common',
+      description: 'Meta 描述生成',
+      content: `为以下产品页面生成 Meta 描述（160 字符以内）：
+
+产品名称：{{brand_name}}
+产品描述：{{brand_description}}
+页面类型：{{page_type}}
+
+要求：
+1. 简洁有力
+2. 包含关键信息
+3. 吸引用户点击`,
+    },
+  ];
+
+  for (const prompt of prompts) {
+    const existing = queryOne<{ id: number }>(
+      'SELECT id FROM prompts WHERE name = ?',
+      [prompt.name]
+    );
+
+    if (!existing) {
+      // 创建 prompt
+      execute(
+        `INSERT INTO prompts (name, description, category, is_active)
+         VALUES (?, ?, ?, 1)`,
+        [prompt.name, prompt.description, prompt.category]
+      );
+
+      const newPrompt = queryOne<{ id: number }>(
+        'SELECT id FROM prompts WHERE name = ?',
+        [prompt.name]
+      );
+
+      if (newPrompt) {
+        // 创建初始版本
+        execute(
+          `INSERT INTO prompt_versions (prompt_id, version, content, is_active)
+           VALUES (?, 1, ?, 1)`,
+          [newPrompt.id, prompt.content]
+        );
+
+        // 更新 active_version_id
+        const versionId = queryOne<{ id: number }>(
+          'SELECT id FROM prompt_versions WHERE prompt_id = ? AND version = 1',
+          [newPrompt.id]
+        );
+
+        if (versionId) {
+          execute(
+            'UPDATE prompts SET active_version_id = ? WHERE id = ?',
+            [versionId.id, newPrompt.id]
+          );
+        }
+      }
+
+      console.log(`Created prompt: ${prompt.name}`);
+    }
+  }
+
+  console.log(`Seeded ${prompts.length} default prompts`);
+}
+
+/**
  * 运行所有种子数据
  */
 export async function seed(): Promise<void> {
@@ -198,6 +326,7 @@ export async function seed(): Promise<void> {
   seedBlacklistSources();
   seedDefaultUABlacklist();
   seedDefaultISPBlacklist();
+  seedDefaultPrompts();
 
   console.log('Database seeding completed.');
 }

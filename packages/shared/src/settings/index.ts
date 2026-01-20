@@ -1,5 +1,5 @@
-import { queryAll, queryOne, execute } from '../db/connection.js';
-import { encrypt, decrypt } from '../utils/crypto.js';
+import { queryAll, queryOne, execute } from '../db/connection';
+import { encrypt, decrypt } from '../utils/crypto';
 
 export interface SystemSetting {
   id: number;

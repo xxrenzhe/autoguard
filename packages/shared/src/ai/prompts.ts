@@ -1,4 +1,4 @@
-import { queryOne, execute, queryAll } from '../db/connection.js';
+import { queryOne, execute, queryAll } from '../db/connection';
 
 export interface PromptVersion {
   id: number;

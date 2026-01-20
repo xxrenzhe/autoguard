@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { queryOne, execute } from '@autoguard/shared';
-import type { Offer } from '@autoguard/shared';
+import { queryOne, queryAll, execute } from '@autoguard/shared';
+import type { Offer, Page } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 
 // 更新 Offer 的验证 schema
@@ -117,6 +117,40 @@ export async function PATCH(request: Request, { params }: Params) {
       }
     }
     if (data.status !== undefined) {
+      // Precondition check for activating an offer
+      if (data.status === 'active' && offer.status !== 'active') {
+        // Check that at least one page is ready (generated or published)
+        const readyPages = queryAll<Page>(
+          `SELECT id FROM pages WHERE offer_id = ? AND status IN ('generated', 'published')`,
+          [offerId]
+        );
+
+        if (readyPages.length === 0) {
+          return NextResponse.json(
+            {
+              error: {
+                code: 'PRECONDITION_FAILED',
+                message: 'Cannot activate offer: at least one page must be ready (generated or published)',
+              },
+            },
+            { status: 400 }
+          );
+        }
+
+        // Check required fields are set
+        if (!offer.affiliate_link) {
+          return NextResponse.json(
+            {
+              error: {
+                code: 'PRECONDITION_FAILED',
+                message: 'Cannot activate offer: affiliate link is required',
+              },
+            },
+            { status: 400 }
+          );
+        }
+      }
+
       updates.push('status = ?');
       values.push(data.status);
     }

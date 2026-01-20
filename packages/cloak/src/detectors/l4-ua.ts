@@ -9,12 +9,12 @@ import type {
   DetectionContext,
   DetectorResult,
   L4Details,
-} from '../types.js';
+} from '../types';
 import {
   KNOWN_BOT_PATTERNS,
   SUSPICIOUS_UA_PATTERNS,
   defaultConfig,
-} from '../config/index.js';
+} from '../config';
 
 export class L4UADetector implements Detector {
   name = 'L4-UserAgent';
