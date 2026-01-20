@@ -96,9 +96,9 @@ export const CacheKeys = {
 
   // 队列
   queue: {
-    cloakLogs: 'queue:cloak_logs',
-    pageGeneration: 'queue:page_generation',
-    scrapeJobs: 'queue:scrape_jobs',
+    cloakLogs: 'autoguard:queue:cloak_logs',
+    pageGeneration: 'autoguard:queue:page_generation',
+    scrapeJobs: 'autoguard:queue:scrape_jobs',
   },
 } as const;
 

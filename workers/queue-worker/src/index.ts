@@ -11,6 +11,7 @@ import {
   queryOne,
   execute,
   safeJsonParse,
+  Settings,
 } from '@autoguard/shared';
 import type { Offer, Page } from '@autoguard/shared';
 import {
@@ -102,12 +103,19 @@ async function processJob(job: PageGenerationJob): Promise<void> {
         throw new Error('Offer not found');
       }
 
+      // 用户级 AI 配置（优先）→ 全局设置（回退）→ 环境变量（最终回退由 page-generator 内部处理）
+      const geminiApiKey = Settings.getGeminiApiKey(offer.user_id) || undefined;
+      const geminiModel = Settings.getGeminiModel(offer.user_id) || undefined;
+
       const result = await generateSafePage({
         brandName: offer.brand_name,
         brandUrl: offer.brand_url,
         pageType: safePageType,
         language: 'en',
         tone: 'professional',
+        affiliateLink: offer.affiliate_link,
+        apiKey: geminiApiKey,
+        model: geminiModel,
       });
 
       if (!result.success || !result.html) {

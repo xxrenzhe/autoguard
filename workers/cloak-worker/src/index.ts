@@ -7,7 +7,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import { Redis } from 'ioredis';
 import { makeDecision, initEngine, getDecisionReason } from '@autoguard/cloak';
 import type { CloakDecision } from '@autoguard/cloak';
-import { getRedis, CacheKeys, safeJsonParse } from '@autoguard/shared';
+import { getRedis, CacheKeys, safeJsonParse, Settings } from '@autoguard/shared';
 import type { Offer } from '@autoguard/shared';
 
 const app = express();
@@ -47,12 +47,13 @@ async function handleCloakRequest(req: Request, res: Response): Promise<void> {
     }
 
     // 2) 提取请求信息
+    const hostHeader = req.headers.host || '';
     const cloakRequest = {
       ip: getClientIP(req),
       userAgent: req.headers['user-agent'] || '',
       referer: req.headers['referer'] || '',
       url: req.headers['x-original-uri']?.toString() || req.originalUrl,
-      host: (req.headers.host || '').split(':')[0],
+      host: hostHeader.split(':')[0] || '',
     };
 
     // 3) 决定变体（A=Money，B=Safe）
@@ -67,7 +68,8 @@ async function handleCloakRequest(req: Request, res: Response): Promise<void> {
         ? safeJsonParse<string[]>(offer.target_countries, [])
         : [];
 
-      // 运行检测引擎
+      // 运行检测引擎（使用 DB 配置）
+      const cloakConfig = Settings.getCloakConfig();
       const decision = await makeDecision(
         cloakRequest,
         offer.id,
@@ -75,6 +77,7 @@ async function handleCloakRequest(req: Request, res: Response): Promise<void> {
         {
           targetCountries,
           cloakEnabled: true,
+          config: cloakConfig || undefined,
         }
       );
 

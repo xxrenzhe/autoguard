@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { queryAll, queryOne, execute } from '@autoguard/shared';
+import { queryAll, queryOne, execute, deleteCache, CacheKeys } from '@autoguard/shared';
 import type {
   BlacklistIP,
   BlacklistIPRange,
@@ -46,6 +46,26 @@ const tableConfig: Record<
     additionalColumns: ['region_code', 'block_type'],
   },
 };
+
+// Helper to invalidate blacklist cache for a specific type and scope
+async function invalidateBlacklistCache(type: BlacklistType, userId: number | null): Promise<void> {
+  const scope = userId === null ? 'global' : userId;
+  const cacheKeyFn = {
+    ip: CacheKeys.blacklist.ip,
+    ip_range: CacheKeys.blacklist.ipRanges,
+    ua: CacheKeys.blacklist.uas,
+    isp: CacheKeys.blacklist.isps,
+    geo: CacheKeys.blacklist.geos,
+  }[type];
+
+  if (cacheKeyFn) {
+    try {
+      await deleteCache(cacheKeyFn(scope));
+    } catch (err) {
+      console.error('Failed to invalidate blacklist cache:', err);
+    }
+  }
+}
 
 // Query parameters schema
 const queryParamsSchema = z.object({
@@ -292,6 +312,9 @@ export async function POST(request: Request) {
         }
       }
 
+      // Invalidate cache after bulk add
+      await invalidateBlacklistCache(data.type, targetUserId);
+
       return NextResponse.json({
         success: true,
         message: `Added ${added} entries, skipped ${skipped} existing entries`,
@@ -336,6 +359,9 @@ export async function POST(request: Request) {
         [existing.id]
       );
 
+      // Invalidate cache
+      await invalidateBlacklistCache(data.type, targetUserId);
+
       return NextResponse.json({
         success: true,
         message: 'Entry reactivated',
@@ -345,6 +371,9 @@ export async function POST(request: Request) {
 
     // Insert new entry
     const result = insertEntry(data.type, data as Record<string, unknown>, targetUserId);
+
+    // Invalidate cache
+    await invalidateBlacklistCache(data.type, targetUserId);
 
     return NextResponse.json({
       success: true,
@@ -399,11 +428,22 @@ export async function DELETE(request: Request) {
 
     const entryId = parseInt(id, 10);
 
+    // Get the entry to know which cache to invalidate
+    const entry = queryOne<{ user_id: number | null }>(
+      `SELECT user_id FROM ${config.tableName} WHERE id = ?`,
+      [entryId]
+    );
+
     // Soft delete
     execute(
       `UPDATE ${config.tableName} SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
       [entryId]
     );
+
+    // Invalidate cache
+    if (entry) {
+      await invalidateBlacklistCache(type, entry.user_id);
+    }
 
     return NextResponse.json({
       success: true,

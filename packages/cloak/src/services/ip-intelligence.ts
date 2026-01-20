@@ -10,6 +10,16 @@ import type { IPLookupResult } from '../types';
 import path from 'path';
 import fs from 'fs';
 
+// Anonymous IP 数据库类型定义 (GeoIP2-Anonymous-IP.mmdb)
+interface AnonymousIPResponse {
+  is_anonymous?: boolean;
+  is_anonymous_vpn?: boolean;
+  is_hosting_provider?: boolean;
+  is_public_proxy?: boolean;
+  is_residential_proxy?: boolean;
+  is_tor_exit_node?: boolean;
+}
+
 // 内存缓存（LRU）
 const memoryCache = new LRUCache<string, IPLookupResult>({
   max: 10000,
@@ -19,6 +29,7 @@ const memoryCache = new LRUCache<string, IPLookupResult>({
 // MaxMind Reader 实例
 let cityReader: MaxmindReader<CityResponse> | null = null;
 let asnReader: MaxmindReader<AsnResponse> | null = null;
+let anonymousReader: MaxmindReader<AnonymousIPResponse> | null = null;
 let initialized = false;
 
 /**
@@ -33,6 +44,7 @@ export async function initMaxMind(): Promise<void> {
 
   const cityDbPath = process.env.GEOIP_DB_PATH || path.join(maxmindDir, 'GeoLite2-City.mmdb');
   const asnDbPath = process.env.GEOIP_ASN_DB_PATH || path.join(maxmindDir, 'GeoLite2-ASN.mmdb');
+  const anonymousDbPath = process.env.GEOIP_ANONYMOUS_DB_PATH || path.join(maxmindDir, 'GeoIP2-Anonymous-IP.mmdb');
 
   try {
     if (fs.existsSync(cityDbPath)) {
@@ -47,6 +59,14 @@ export async function initMaxMind(): Promise<void> {
       console.log('MaxMind ASN database loaded');
     } else {
       console.warn(`MaxMind ASN database not found: ${asnDbPath}`);
+    }
+
+    // Load Anonymous IP database for VPN/Proxy/Tor detection (GeoIP2 商业版或 GeoLite2)
+    if (fs.existsSync(anonymousDbPath)) {
+      anonymousReader = await maxmind.open<AnonymousIPResponse>(anonymousDbPath);
+      console.log('MaxMind Anonymous-IP database loaded (VPN/Proxy/Tor detection enabled)');
+    } else {
+      console.warn(`MaxMind Anonymous-IP database not found: ${anonymousDbPath} (VPN/Proxy/Tor detection will use heuristics only)`);
     }
 
     initialized = true;
@@ -152,6 +172,35 @@ async function lookupIP(ip: string): Promise<IPLookupResult> {
       }
     } catch (error) {
       console.warn(`ASN lookup failed for ${ip}:`, error);
+    }
+  }
+
+  // 查询 Anonymous IP 数据库 (VPN/Proxy/Tor 检测)
+  if (anonymousReader) {
+    try {
+      const anonResponse = anonymousReader.get(ip);
+      if (anonResponse) {
+        // 直接使用 MaxMind 的 VPN/Proxy/Tor 检测结果
+        if (anonResponse.is_anonymous_vpn) {
+          result.isVPN = true;
+          result.isResidential = false;
+        }
+        if (anonResponse.is_public_proxy || anonResponse.is_residential_proxy) {
+          result.isProxy = true;
+          result.isResidential = false;
+        }
+        if (anonResponse.is_tor_exit_node) {
+          result.isTor = true;
+          result.isResidential = false;
+        }
+        if (anonResponse.is_hosting_provider) {
+          result.isHosting = true;
+          result.isDatacenter = true;
+          result.isResidential = false;
+        }
+      }
+    } catch (error) {
+      console.warn(`Anonymous IP lookup failed for ${ip}:`, error);
     }
   }
 
@@ -282,5 +331,6 @@ export function closeMaxMind(): void {
   // MaxMind reader 不需要显式关闭
   cityReader = null;
   asnReader = null;
+  anonymousReader = null;
   initialized = false;
 }

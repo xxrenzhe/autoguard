@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { queryOne, queryAll, execute } from '@autoguard/shared';
+import { queryOne, execute } from '@autoguard/shared';
 import type { Offer, Page } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 
@@ -119,18 +119,38 @@ export async function PATCH(request: Request, { params }: Params) {
     if (data.status !== undefined) {
       // Precondition check for activating an offer
       if (data.status === 'active' && offer.status !== 'active') {
-        // Check that at least one page is ready (generated or published)
-        const readyPages = queryAll<Page>(
-          `SELECT id FROM pages WHERE offer_id = ? AND status IN ('generated', 'published')`,
-          [offerId]
-        );
-
-        if (readyPages.length === 0) {
+        // Check scrape is completed
+        if (offer.scrape_status !== 'completed') {
           return NextResponse.json(
             {
               error: {
                 code: 'PRECONDITION_FAILED',
-                message: 'Cannot activate offer: at least one page must be ready (generated or published)',
+                message: 'Cannot activate offer: page scraping must be completed first',
+              },
+            },
+            { status: 400 }
+          );
+        }
+
+        // Check both Money and Safe pages are ready
+        const moneyPage = queryOne<Page>(
+          `SELECT id FROM pages WHERE offer_id = ? AND page_type = 'money' AND status IN ('generated', 'published')`,
+          [offerId]
+        );
+        const safePage = queryOne<Page>(
+          `SELECT id FROM pages WHERE offer_id = ? AND page_type = 'safe' AND status IN ('generated', 'published')`,
+          [offerId]
+        );
+
+        if (!moneyPage || !safePage) {
+          const missing = [];
+          if (!moneyPage) missing.push('Money Page');
+          if (!safePage) missing.push('Safe Page');
+          return NextResponse.json(
+            {
+              error: {
+                code: 'PRECONDITION_FAILED',
+                message: `Cannot activate offer: ${missing.join(' and ')} must be ready (generated or published)`,
               },
             },
             { status: 400 }

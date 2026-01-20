@@ -313,7 +313,7 @@ export async function PUT(request: Request, { params }: Params) {
     });
   }
 
-  // 判定结果: TXT 验证必须通过，HTTP 验证是额外的检查
+  // 判定结果: TXT + HTTP 检查均需通过（Normalization 统一口径）
   const verified = txtVerified && httpVerified;
 
   if (verified) {
@@ -325,6 +325,16 @@ export async function PUT(request: Request, { params }: Params) {
       WHERE id = ?`,
       [offerId]
     );
+
+    // Invalidate caches so Cloak Worker picks up verified domain immediately
+    try {
+      const redis = getRedis();
+      await redis.del(CacheKeys.offer.bySubdomain(offer.subdomain));
+      await redis.del(CacheKeys.offer.byId(offerId));
+      await redis.del(CacheKeys.offer.byDomain(offer.custom_domain));
+    } catch (redisError) {
+      console.error('Redis cache invalidation failed:', redisError);
+    }
 
     return NextResponse.json({
       success: true,
@@ -341,13 +351,30 @@ export async function PUT(request: Request, { params }: Params) {
       message: 'Domain verified successfully',
     });
   } else {
-    // 验证失败，保持 pending 状态
+    // 验证失败，标记为 failed（Normalization 统一口径）
+    execute(
+      `UPDATE offers SET
+        custom_domain_status = 'failed',
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?`,
+      [offerId]
+    );
+
+    try {
+      const redis = getRedis();
+      await redis.del(CacheKeys.offer.bySubdomain(offer.subdomain));
+      await redis.del(CacheKeys.offer.byId(offerId));
+      await redis.del(CacheKeys.offer.byDomain(offer.custom_domain));
+    } catch (redisError) {
+      console.error('Redis cache invalidation failed:', redisError);
+    }
+
     return NextResponse.json({
       success: true,
       data: {
         verified: false,
         custom_domain: offer.custom_domain,
-        custom_domain_status: 'pending',
+        custom_domain_status: 'failed',
         checks: {
           txt: { verified: txtVerified },
           http: { verified: httpVerified },

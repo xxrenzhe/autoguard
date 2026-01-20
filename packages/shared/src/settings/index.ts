@@ -213,8 +213,69 @@ export const Settings = {
 
   // Cloak 设置
   getCloakTimeout: () =>
-    getSetting<number>('cloak', 'decision_timeout_ms') || 100,
+    getSetting<number>('cloak', 'decision_timeout_ms') || 50,
 
   getSafeModeThreshold: () =>
-    getSetting<number>('cloak', 'safe_mode_threshold') || 50,
+    getSetting<number>('cloak', 'safe_mode_threshold') || 60,
+
+  /**
+   * 获取完整的 Cloak 配置（用于注入到 cloak engine）
+   */
+  getCloakConfig: () => {
+    const config: Record<string, unknown> = {};
+
+    // 超时设置
+    const timeout = getSetting<number>('cloak', 'decision_timeout_ms');
+    if (timeout !== null) {
+      config.decisionTimeoutMs = timeout;
+    }
+
+    // 阈值设置
+    const threshold = getSetting<number>('cloak', 'safe_mode_threshold');
+    if (threshold !== null) {
+      config.safeModeThreshold = threshold;
+    }
+
+    // 权重设置
+    const weightsJson = getSetting<string>('cloak', 'weights');
+    if (weightsJson) {
+      try {
+        config.weights = JSON.parse(weightsJson);
+      } catch {
+        // 忽略解析错误
+      }
+    }
+
+    // L2 配置
+    const l2Json = getSetting<string>('cloak', 'l2_config');
+    if (l2Json) {
+      try {
+        config.l2 = JSON.parse(l2Json);
+      } catch {
+        // 忽略解析错误
+      }
+    }
+
+    // L4 配置
+    const l4Json = getSetting<string>('cloak', 'l4_config');
+    if (l4Json) {
+      try {
+        config.l4 = JSON.parse(l4Json);
+      } catch {
+        // 忽略解析错误
+      }
+    }
+
+    // L5 配置
+    const l5Json = getSetting<string>('cloak', 'l5_config');
+    if (l5Json) {
+      try {
+        config.l5 = JSON.parse(l5Json);
+      } catch {
+        // 忽略解析错误
+      }
+    }
+
+    return Object.keys(config).length > 0 ? config : null;
+  },
 };

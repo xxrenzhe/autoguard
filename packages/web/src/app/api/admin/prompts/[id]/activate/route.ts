@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { queryOne, execute, getRedis, CacheKeys } from '@autoguard/shared';
+import { queryOne, execute, invalidatePromptCache } from '@autoguard/shared';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -72,12 +72,7 @@ export async function PUT(request: NextRequest, context: RouteParams) {
 
     // 清除缓存
     if (prompt) {
-      try {
-        const redis = getRedis();
-        await redis.del(`autoguard:prompt:${prompt.name}`);
-      } catch (cacheError) {
-        console.warn('Failed to clear prompt cache:', cacheError);
-      }
+      await invalidatePromptCache(prompt.name);
     }
 
     return NextResponse.json({ success: true });

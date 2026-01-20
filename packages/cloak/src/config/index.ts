@@ -16,8 +16,8 @@ import type { CloakConfig } from '../types';
  * - L5 (Referer): 增强版功能，可疑来源检测
  */
 export const defaultConfig: CloakConfig = {
-  // 决策超时：200ms（设计文档要求 < 50ms，生产环境可调低）
-  decisionTimeoutMs: 200,
+  // 决策超时：50ms（设计文档要求 < 50ms）
+  decisionTimeoutMs: 50,
 
   // 低于此分数触发 Safe（满分 100，高分=可信）
   // 设计文档阈值 40（高分=可疑），换算后约等于此处的 60

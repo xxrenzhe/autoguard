@@ -33,8 +33,8 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
   // Modal state
   const [showModal, setShowModal] = useState(false);
   const [modalVariant, setModalVariant] = useState<'a' | 'b'>('a');
-  const [modalAction, setModalAction] = useState<'scrape' | 'ai_generate'>('scrape');
   const [modalUrl, setModalUrl] = useState('');
+  const [modalSafePageType, setModalSafePageType] = useState<'review' | 'tips' | 'comparison' | 'guide'>('review');
 
   useEffect(() => {
     fetchPages();
@@ -59,7 +59,9 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
   }
 
   async function handleGenerate() {
-    if (modalAction === 'scrape' && !modalUrl) {
+    const action = modalVariant === 'a' ? 'scrape' : 'ai_generate';
+
+    if (action === 'scrape' && !modalUrl) {
       toast.error('Please enter a URL to scrape');
       return;
     }
@@ -73,8 +75,9 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           variant: modalVariant,
-          action: modalAction,
-          source_url: modalUrl || undefined,
+          action,
+          source_url: action === 'scrape' ? (modalUrl || undefined) : undefined,
+          safe_page_type: action === 'ai_generate' ? modalSafePageType : undefined,
         }),
       });
 
@@ -96,8 +99,12 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
 
   function openGenerateModal(variant: 'a' | 'b') {
     setModalVariant(variant);
-    setModalAction('scrape');
-    setModalUrl('');
+    if (variant === 'a') {
+      setModalUrl('');
+    } else {
+      setModalUrl('');
+      setModalSafePageType('review');
+    }
     setShowModal(true);
   }
 
@@ -332,35 +339,7 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
             </h2>
 
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Generation Method
-                </label>
-                <div className="flex space-x-4">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      value="scrape"
-                      checked={modalAction === 'scrape'}
-                      onChange={() => setModalAction('scrape')}
-                      className="mr-2"
-                    />
-                    <span>Scrape URL</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      value="ai_generate"
-                      checked={modalAction === 'ai_generate'}
-                      onChange={() => setModalAction('ai_generate')}
-                      className="mr-2"
-                    />
-                    <span>AI Generate</span>
-                  </label>
-                </div>
-              </div>
-
-              {modalAction === 'scrape' && (
+              {modalVariant === 'a' ? (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     URL to Scrape
@@ -373,13 +352,30 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
-              )}
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Safe Page Type
+                    </label>
+                    <select
+                      value={modalSafePageType}
+                      onChange={(e) =>
+                        setModalSafePageType(e.target.value as typeof modalSafePageType)
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="review">Review</option>
+                      <option value="tips">Tips</option>
+                      <option value="comparison">Comparison</option>
+                      <option value="guide">Guide</option>
+                    </select>
+                  </div>
 
-              {modalAction === 'ai_generate' && (
-                <div className="p-4 bg-blue-50 rounded-lg text-sm text-blue-800">
-                  AI will generate a {modalVariant === 'a' ? 'landing page' : 'safe page'} based on the brand URL.
-                  {modalVariant === 'b' && ' The safe page will be compliance-friendly with no affiliate links.'}
-                </div>
+                  <div className="p-4 bg-blue-50 rounded-lg text-sm text-blue-800">
+                    AI will generate a compliance-friendly Safe Page based on the offer information.
+                  </div>
+                </>
               )}
             </div>
 

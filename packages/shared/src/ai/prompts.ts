@@ -1,4 +1,5 @@
 import { queryOne, execute, queryAll } from '../db/connection';
+import { getRedis, CacheTTL } from '../cache';
 
 export interface PromptVersion {
   id: number;
@@ -68,23 +69,110 @@ Generate the HTML content directly without any markdown formatting.`,
 };
 
 /**
- * 获取 Prompt (优先数据库，回退默认)
+ * 标准化 Prompt 名称（支持下划线和连字符两种格式）
+ */
+function normalizePromptName(name: string): string {
+  // 统一使用连字符作为内部格式
+  return name.replace(/_/g, '-');
+}
+
+/**
+ * 获取 Prompt 的 Redis 缓存 key
+ */
+function getPromptCacheKey(name: string): string {
+  return `autoguard:prompt:${normalizePromptName(name)}`;
+}
+
+/**
+ * 获取 Prompt (优先 Redis 缓存，然后数据库，最后回退默认)
+ * 支持两种命名格式：safe_page_review 和 safe-page-review
+ */
+export async function getPromptAsync(name: string): Promise<string | null> {
+  const cacheKey = getPromptCacheKey(name);
+
+  // 1. 先查 Redis 缓存
+  try {
+    const redis = getRedis();
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+  } catch {
+    // Redis 不可用时继续查数据库
+  }
+
+  // 2. 查数据库
+  const content = getPromptFromDB(name);
+
+  // 3. 写入缓存
+  if (content) {
+    try {
+      const redis = getRedis();
+      await redis.set(cacheKey, content, 'EX', CacheTTL.offer); // 5 分钟缓存
+    } catch {
+      // 缓存写入失败不影响返回
+    }
+  }
+
+  return content;
+}
+
+/**
+ * 获取 Prompt (同步版本，不使用缓存，用于向后兼容)
+ * 支持两种命名格式：safe_page_review 和 safe-page-review
  */
 export function getPrompt(name: string): string | null {
-  // 先查数据库
-  const prompt = queryOne<{ content: string }>(
+  return getPromptFromDB(name);
+}
+
+/**
+ * 从数据库获取 Prompt
+ */
+function getPromptFromDB(name: string): string | null {
+  // 先用原始名称查数据库
+  let prompt = queryOne<{ content: string }>(
     `SELECT pv.content FROM prompt_versions pv
      JOIN prompts p ON p.id = pv.prompt_id
      WHERE p.name = ? AND pv.is_active = 1`,
     [name]
   );
 
+  // 如果没找到，尝试转换命名格式后再查
+  if (!prompt) {
+    const altName = name.includes('-') ? name.replace(/-/g, '_') : name.replace(/_/g, '-');
+    prompt = queryOne<{ content: string }>(
+      `SELECT pv.content FROM prompt_versions pv
+       JOIN prompts p ON p.id = pv.prompt_id
+       WHERE p.name = ? AND pv.is_active = 1`,
+      [altName]
+    );
+  }
+
   if (prompt) {
     return prompt.content;
   }
 
-  // 回退到默认
-  return DEFAULT_PROMPTS[name] || null;
+  // 回退到默认（统一用连字符格式查找）
+  const normalizedName = normalizePromptName(name);
+  return DEFAULT_PROMPTS[normalizedName] || null;
+}
+
+/**
+ * 使指定 Prompt 的缓存失效
+ */
+export async function invalidatePromptCache(name: string): Promise<void> {
+  try {
+    const redis = getRedis();
+    const cacheKey = getPromptCacheKey(name);
+    await redis.del(cacheKey);
+
+    // 同时删除另一种命名格式的缓存
+    const altName = name.includes('-') ? name.replace(/-/g, '_') : name.replace(/_/g, '-');
+    const altCacheKey = getPromptCacheKey(altName);
+    await redis.del(altCacheKey);
+  } catch {
+    // 缓存失效失败不抛出错误
+  }
 }
 
 /**

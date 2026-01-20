@@ -6,9 +6,6 @@
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// 初始化 Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-
 /**
  * Safe Page 类型
  */
@@ -27,6 +24,8 @@ export interface GenerateConfig {
   language?: string;
   tone?: 'professional' | 'casual' | 'friendly';
   affiliateLink?: string; // CTA 链接
+  apiKey?: string;
+  model?: string;
 }
 
 /**
@@ -134,10 +133,22 @@ export async function generateSafePage(config: GenerateConfig): Promise<Generate
     language = 'en',
     tone = 'professional',
     affiliateLink,
+    apiKey: apiKeyOverride,
+    model: modelOverride,
   } = config;
 
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+    const apiKey = apiKeyOverride ?? process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey.trim().length === 0) {
+      return {
+        success: false,
+        error: 'Gemini API key is not configured',
+      };
+    }
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const modelName = modelOverride ?? process.env.GEMINI_MODEL ?? 'gemini-1.5-pro';
+    const model = genAI.getGenerativeModel({ model: modelName });
 
     // 获取 Prompt（优先数据库版本）
     const { content: promptTemplate, version: promptVersion } = await getPromptContent(pageType);
@@ -197,6 +208,7 @@ function buildPrompt(
     brandName,
     brandUrl,
     brandDescription,
+    pageType,
     competitors,
     targetKeywords,
     language,
@@ -204,26 +216,53 @@ function buildPrompt(
     affiliateLink,
   } = config;
 
-  // Replace template variables
-  let prompt = template
-    .replace(/\{\{product_name\}\}/g, brandName)
-    .replace(/\{\{product_url\}\}/g, brandUrl)
-    .replace(/\{\{competitors\}\}/g, competitors.length > 0 ? competitors.join(', ') : 'similar products');
+  const languageLabel = language === 'en' ? 'English' : language;
+  const competitorsText = competitors.length > 0 ? competitors.join(', ') : 'similar products';
+  const ctaLink = affiliateLink || '';
+  const ctaButton = affiliateLink
+    ? `<a href="${affiliateLink}" class="cta-button" data-tracking target="_blank" rel="noopener noreferrer">Visit ${brandName}</a>`
+    : '';
+
+  // Replace template variables (support both SystemDesign2 placeholders and internal defaults)
+  let prompt = template;
 
   // Handle conditional sections
   if (brandDescription) {
-    prompt = prompt.replace(/\{\{#description\}\}(.*?)\{\{\/description\}\}/gs, `$1`);
-    prompt = prompt.replace(/\{\{description\}\}/g, brandDescription);
+    prompt = prompt.replace(/\{\{#description\}\}(.*?)\{\{\/description\}\}/gs, '$1');
   } else {
     prompt = prompt.replace(/\{\{#description\}\}.*?\{\{\/description\}\}/gs, '');
   }
 
   if (affiliateLink) {
-    prompt = prompt.replace(/\{\{#cta_link\}\}(.*?)\{\{\/cta_link\}\}/gs, `$1`);
-    prompt = prompt.replace(/\{\{cta_link\}\}/g, affiliateLink);
+    prompt = prompt.replace(/\{\{#cta_link\}\}(.*?)\{\{\/cta_link\}\}/gs, '$1');
   } else {
     prompt = prompt.replace(/\{\{#cta_link\}\}.*?\{\{\/cta_link\}\}/gs, '');
   }
+
+  // Fill placeholders
+  const replacements: Record<string, string> = {
+    // Default prompt placeholders
+    product_name: brandName,
+    product_url: brandUrl,
+    description: brandDescription || '',
+    competitors: competitorsText,
+    cta_link: ctaLink,
+
+    // SystemDesign2 placeholders
+    brand_name: brandName,
+    brand_url: brandUrl,
+    brand_description: brandDescription || '',
+    affiliate_link: ctaLink,
+    target_language: languageLabel,
+    page_type: pageType,
+  };
+
+  for (const [key, value] of Object.entries(replacements)) {
+    prompt = prompt.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
+  }
+
+  // Replace CTA button placeholder used in seeded prompts
+  prompt = prompt.replace(/\[CTA_BUTTON\]/g, ctaButton);
 
   const keywordsSection =
     targetKeywords.length > 0
@@ -233,7 +272,7 @@ function buildPrompt(
   return `${prompt}
 ${keywordsSection}
 
-Language: ${language === 'en' ? 'English' : language}
+Language: ${languageLabel}
 Tone: ${tone}
 
 Format the output as HTML with proper headings (h1, h2, h3), paragraphs, and lists.

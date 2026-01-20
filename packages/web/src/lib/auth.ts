@@ -3,7 +3,7 @@
  */
 
 import { SignJWT, jwtVerify } from 'jose';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import type { UserWithoutPassword } from '@autoguard/shared';
 
 const JWT_SECRET = new TextEncoder().encode(
@@ -70,6 +70,19 @@ export async function getAuthCookie(): Promise<string | undefined> {
 }
 
 /**
+ * 从 Authorization header 获取 Bearer token
+ */
+export async function getAuthorizationToken(): Promise<string | undefined> {
+  const headersList = await headers();
+  const authHeader = headersList.get('authorization');
+  if (!authHeader) return undefined;
+
+  // Support "Bearer <token>" format
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  return match?.[1];
+}
+
+/**
  * 清除认证 Cookie
  */
 export async function clearAuthCookie(): Promise<void> {
@@ -79,11 +92,21 @@ export async function clearAuthCookie(): Promise<void> {
 
 /**
  * 获取当前用户
+ * 支持两种认证方式：
+ * 1. Authorization: Bearer <token> header (API 客户端优先)
+ * 2. HttpOnly Cookie (浏览器)
  */
 export async function getCurrentUser(): Promise<JWTPayload | null> {
-  const token = await getAuthCookie();
-  if (!token) return null;
-  return verifyToken(token);
+  // 优先检查 Authorization header (适用于 API 客户端)
+  const authToken = await getAuthorizationToken();
+  if (authToken) {
+    return verifyToken(authToken);
+  }
+
+  // 回退到 Cookie (适用于浏览器)
+  const cookieToken = await getAuthCookie();
+  if (!cookieToken) return null;
+  return verifyToken(cookieToken);
 }
 
 /**

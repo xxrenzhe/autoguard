@@ -17,11 +17,12 @@ export default function OffersPage() {
     try {
       const response = await fetch('/api/offers');
       const data = await response.json();
-      if (data.success) {
-        setOffers(data.data);
-      } else {
+      if (!response.ok) {
         toast.error(data.error?.message || 'Failed to fetch offers');
+        return;
       }
+
+      setOffers(data.data || []);
     } catch {
       toast.error('Network error');
     } finally {

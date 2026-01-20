@@ -1,9 +1,70 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { queryOne, execute } from '@autoguard/shared';
+import { queryAll, queryOne, execute } from '@autoguard/shared';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
+}
+
+/**
+ * GET /api/admin/prompts/:id/versions - 获取版本列表
+ */
+export async function GET(request: NextRequest, context: RouteParams) {
+  try {
+    const session = await getSession();
+    if (!session || session.role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id } = await context.params;
+    const promptId = parseInt(id, 10);
+
+    if (isNaN(promptId)) {
+      return NextResponse.json({ error: 'Invalid prompt ID' }, { status: 400 });
+    }
+
+    // 检查 prompt 是否存在
+    const prompt = queryOne<{ id: number; active_version_id: number | null }>(
+      'SELECT id, active_version_id FROM prompts WHERE id = ?',
+      [promptId]
+    );
+
+    if (!prompt) {
+      return NextResponse.json({ error: 'Prompt not found' }, { status: 404 });
+    }
+
+    const versions = queryAll<{
+      id: number;
+      prompt_id: number;
+      version: number;
+      content: string;
+      is_active: number;
+      created_at: string;
+      activated_at: string | null;
+    }>(
+      `SELECT id, prompt_id, version, content, is_active, created_at, activated_at
+       FROM prompt_versions
+       WHERE prompt_id = ?
+       ORDER BY version DESC`,
+      [promptId]
+    );
+
+    return NextResponse.json({
+      data: versions.map((v) => ({
+        id: v.id,
+        prompt_id: v.prompt_id,
+        version: v.version,
+        content: v.content,
+        is_active: v.is_active,
+        status: v.is_active ? 'active' : 'draft',
+        created_at: v.created_at,
+        activated_at: v.activated_at,
+      })),
+    });
+  } catch (error) {
+    console.error('Failed to get versions:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
 }
 
 /**

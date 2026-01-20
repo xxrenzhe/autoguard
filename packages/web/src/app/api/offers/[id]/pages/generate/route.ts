@@ -43,6 +43,33 @@ export async function POST(request: Request, { params }: Params) {
     const body = await request.json();
     const data = generatePageSchema.parse(body);
 
+    // Enforce generation methods per design:
+    // - Money Page (A): scrape only
+    // - Safe Page (B): AI generate only
+    if (data.variant === 'a' && data.action !== 'scrape') {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Money Page (variant a) only supports scrape generation',
+          },
+        },
+        { status: 400 }
+      );
+    }
+
+    if (data.variant === 'b' && data.action !== 'ai_generate') {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Safe Page (variant b) only supports AI generation',
+          },
+        },
+        { status: 400 }
+      );
+    }
+
     // 确定源 URL
     let sourceUrl: string;
     // 将 variant a/b 映射到 page_type money/safe

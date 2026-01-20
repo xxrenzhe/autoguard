@@ -21,6 +21,10 @@ const PUBLIC_PATHS = ['/login', '/api/auth/login'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const isApiV1 = pathname === '/api/v1' || pathname.startsWith('/api/v1/');
+  const effectivePathname = isApiV1
+    ? pathname.replace(/^\/api\/v1(?=\/|$)/, '/api')
+    : pathname;
 
   // 静态资源和 API 路由（除了需要保护的 API）不拦截
   if (
@@ -32,9 +36,14 @@ export async function middleware(request: NextRequest) {
   }
 
   // API 路由需要特殊处理
-  if (pathname.startsWith('/api/')) {
+  if (effectivePathname.startsWith('/api/')) {
     // 登录 API 不需要验证
-    if (pathname === '/api/auth/login') {
+    if (effectivePathname === '/api/auth/login') {
+      if (isApiV1) {
+        const url = request.nextUrl.clone();
+        url.pathname = effectivePathname;
+        return NextResponse.rewrite(url);
+      }
       return NextResponse.next();
     }
 
@@ -50,6 +59,11 @@ export async function middleware(request: NextRequest) {
 
     try {
       await jwtVerify(token, JWT_SECRET);
+      if (isApiV1) {
+        const url = request.nextUrl.clone();
+        url.pathname = effectivePathname;
+        return NextResponse.rewrite(url);
+      }
       return NextResponse.next();
     } catch {
       return NextResponse.json(

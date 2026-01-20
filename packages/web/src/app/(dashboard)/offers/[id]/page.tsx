@@ -369,7 +369,7 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
                 <p className="text-xs text-gray-500 mt-1">
                   {offer.cloak_enabled
                     ? 'Traffic filtering is active'
-                    : 'All visitors see Money Page'}
+                    : 'All visitors see Safe Page'}
                 </p>
               </div>
               <button

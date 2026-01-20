@@ -83,25 +83,41 @@ let totalWritten = 0;
 let lastReportTime = Date.now();
 
 /**
- * 处理队列
+ * 处理队列 - 使用 brpop 阻塞等待，比 rpop+sleep 更高效
  */
 async function processQueue(): Promise<void> {
   console.log('Log Writer started, waiting for logs...');
+
+  // brpop 超时时间（秒），0 表示无限等待，这里设置为合理的超时
+  const BRPOP_TIMEOUT = Math.ceil(FLUSH_INTERVAL_MS / 1000) || 1;
 
   while (true) {
     try {
       const logs: CloakLogEntry[] = [];
 
-      // 批量获取日志
-      for (let i = 0; i < BATCH_SIZE; i++) {
-        const result = await redis.rpop(CacheKeys.queue.cloakLogs);
-        if (!result) break;
+      // 使用 brpop 阻塞等待第一条日志
+      const firstResult = await redis.brpop(CacheKeys.queue.cloakLogs, BRPOP_TIMEOUT);
 
+      if (firstResult) {
+        // brpop 返回 [key, value]
         try {
-          const log = JSON.parse(result) as CloakLogEntry;
+          const log = JSON.parse(firstResult[1]) as CloakLogEntry;
           logs.push(log);
         } catch (parseError) {
           console.error('Failed to parse log entry:', parseError);
+        }
+
+        // 有数据后，继续用 rpop 批量获取剩余的（非阻塞）
+        for (let i = 1; i < BATCH_SIZE; i++) {
+          const result = await redis.rpop(CacheKeys.queue.cloakLogs);
+          if (!result) break;
+
+          try {
+            const log = JSON.parse(result) as CloakLogEntry;
+            logs.push(log);
+          } catch (parseError) {
+            console.error('Failed to parse log entry:', parseError);
+          }
         }
       }
 
@@ -117,105 +133,11 @@ async function processQueue(): Promise<void> {
           lastReportTime = now;
         }
       }
-
-      // 如果队列为空，等待一会儿
-      if (logs.length < BATCH_SIZE) {
-        await sleep(FLUSH_INTERVAL_MS);
-      }
+      // brpop 已经处理了等待，无需额外 sleep
     } catch (error) {
       console.error('Log write error:', error);
       await sleep(1000);
     }
-  }
-}
-
-/**
- * 更新每日统计
- */
-async function updateDailyStats(): Promise<void> {
-  const today = new Date().toISOString().split('T')[0];
-
-  try {
-    // 聚合今日统计
-    const stats = db
-      .prepare(
-        `
-        SELECT
-          user_id,
-          offer_id,
-          COUNT(*) as total_visits,
-          SUM(CASE WHEN decision = 'money' THEN 1 ELSE 0 END) as money_page_visits,
-          SUM(CASE WHEN decision = 'safe' THEN 1 ELSE 0 END) as safe_page_visits,
-          COUNT(DISTINCT ip_address) as unique_ips,
-          AVG(fraud_score) as avg_fraud_score,
-          SUM(CASE WHEN blocked_at_layer = 'L1' THEN 1 ELSE 0 END) as blocked_l1,
-          SUM(CASE WHEN blocked_at_layer = 'L2' THEN 1 ELSE 0 END) as blocked_l2,
-          SUM(CASE WHEN blocked_at_layer = 'L3' THEN 1 ELSE 0 END) as blocked_l3,
-          SUM(CASE WHEN blocked_at_layer = 'L4' THEN 1 ELSE 0 END) as blocked_l4,
-          SUM(CASE WHEN blocked_at_layer = 'L5' THEN 1 ELSE 0 END) as blocked_l5,
-          SUM(CASE WHEN blocked_at_layer = 'TIMEOUT' THEN 1 ELSE 0 END) as blocked_timeout
-        FROM cloak_logs
-        WHERE DATE(created_at) = ?
-        GROUP BY user_id, offer_id
-      `
-      )
-      .all(today) as Array<{
-      user_id: number;
-      offer_id: number;
-      total_visits: number;
-      money_page_visits: number;
-      safe_page_visits: number;
-      unique_ips: number;
-      avg_fraud_score: number;
-      blocked_l1: number;
-      blocked_l2: number;
-      blocked_l3: number;
-      blocked_l4: number;
-      blocked_l5: number;
-      blocked_timeout: number;
-    }>;
-
-    // 更新或插入统计
-    const upsertStmt = db.prepare(`
-      INSERT INTO daily_stats (
-        user_id, offer_id, stat_date,
-        total_visits, money_page_visits, safe_page_visits, unique_ips, avg_fraud_score,
-        blocked_l1, blocked_l2, blocked_l3, blocked_l4, blocked_l5, blocked_timeout,
-        updated_at
-      ) VALUES (
-        @user_id, @offer_id, @stat_date,
-        @total_visits, @money_page_visits, @safe_page_visits, @unique_ips, @avg_fraud_score,
-        @blocked_l1, @blocked_l2, @blocked_l3, @blocked_l4, @blocked_l5, @blocked_timeout,
-        CURRENT_TIMESTAMP
-      )
-      ON CONFLICT (user_id, offer_id, stat_date) DO UPDATE SET
-        total_visits = excluded.total_visits,
-        money_page_visits = excluded.money_page_visits,
-        safe_page_visits = excluded.safe_page_visits,
-        unique_ips = excluded.unique_ips,
-        avg_fraud_score = excluded.avg_fraud_score,
-        blocked_l1 = excluded.blocked_l1,
-        blocked_l2 = excluded.blocked_l2,
-        blocked_l3 = excluded.blocked_l3,
-        blocked_l4 = excluded.blocked_l4,
-        blocked_l5 = excluded.blocked_l5,
-        blocked_timeout = excluded.blocked_timeout,
-        updated_at = CURRENT_TIMESTAMP
-    `);
-
-    const upsertMany = db.transaction((rows: typeof stats) => {
-      for (const row of rows) {
-        upsertStmt.run({
-          ...row,
-          stat_date: today,
-        });
-      }
-    });
-
-    upsertMany(stats);
-    console.log(`[Stats] Updated daily stats for ${today}, ${stats.length} groups`);
-  } catch (error) {
-    console.error('Failed to update daily stats:', error);
   }
 }
 
@@ -241,6 +163,3 @@ process.on('SIGTERM', gracefulShutdown);
 
 // 启动
 processQueue();
-
-// 每 5 分钟更新一次统计
-setInterval(updateDailyStats, 5 * 60 * 1000);

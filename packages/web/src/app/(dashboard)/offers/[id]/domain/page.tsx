@@ -9,6 +9,7 @@ interface DomainStatus {
   custom_domain: string | null;
   custom_domain_status: string | null;
   custom_domain_verified_at: string | null;
+  custom_domain_token: string | null;
   cname_target: string;
 }
 
@@ -86,33 +87,20 @@ export default function CustomDomainPage({ params }: { params: Promise<{ id: str
   async function handleVerify() {
     setVerifying(true);
     try {
-      const response = await fetch(`/api/offers/${id}/custom-domain`, {
-        method: 'PUT',
+      const response = await fetch(`/api/offers/${id}/custom-domain/verify`, {
+        method: 'POST',
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        toast.error(data.error?.message || 'Failed to verify domain');
+        toast.error(data.error?.message || 'Verification failed');
+        await fetchDomainStatus();
         return;
       }
 
-      if (data.data.verified) {
-        toast.success('Domain verified successfully!');
-        setDomainStatus({
-          ...domainStatus!,
-          custom_domain_status: 'verified',
-          custom_domain_verified_at: new Date().toISOString(),
-        });
-      } else {
-        toast.error(data.data.message || 'Verification failed');
-        if (data.data.custom_domain_status === 'failed') {
-          setDomainStatus({
-            ...domainStatus!,
-            custom_domain_status: 'failed',
-          });
-        }
-      }
+      toast.success(data.message || 'Domain verified successfully!');
+      await fetchDomainStatus();
     } catch {
       toast.error('Network error');
     } finally {
@@ -226,9 +214,12 @@ export default function CustomDomainPage({ params }: { params: Promise<{ id: str
               <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <h3 className="font-medium text-blue-900 mb-2">DNS Configuration Required</h3>
                 <p className="text-sm text-blue-800 mb-3">
-                  Add the following CNAME record to your domain&apos;s DNS settings:
+                  Add the following DNS records to your domain&apos;s settings:
                 </p>
-                <div className="bg-white rounded border p-3 font-mono text-sm">
+
+                {/* CNAME Record */}
+                <div className="bg-white rounded border p-3 font-mono text-sm mb-3">
+                  <div className="text-xs text-gray-500 mb-2 font-sans font-medium">1. CNAME Record (Required)</div>
                   <div className="grid grid-cols-3 gap-4">
                     <div>
                       <span className="text-gray-500 text-xs block">Type</span>
@@ -244,8 +235,30 @@ export default function CustomDomainPage({ params }: { params: Promise<{ id: str
                     </div>
                   </div>
                 </div>
+
+                {/* TXT Record */}
+                {domainStatus.custom_domain_token && (
+                  <div className="bg-white rounded border p-3 font-mono text-sm">
+                    <div className="text-xs text-gray-500 mb-2 font-sans font-medium">2. TXT Record (For Verification)</div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <span className="text-gray-500 text-xs block">Type</span>
+                        TXT
+                      </div>
+                      <div>
+                        <span className="text-gray-500 text-xs block">Name</span>
+                        _autoguard.{domainStatus.custom_domain.split('.')[0]}
+                      </div>
+                      <div>
+                        <span className="text-gray-500 text-xs block">Value</span>
+                        <span className="break-all">ag-verify={domainStatus.custom_domain_token}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <p className="text-xs text-blue-700 mt-3">
-                  DNS propagation may take up to 48 hours. After adding the record, click &quot;Verify Now&quot; to check.
+                  DNS propagation may take up to 48 hours. After adding both records, click &quot;Verify Now&quot; to check.
                 </p>
               </div>
             )}

@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { queryAll, queryOne, execute, generateSubdomain, getRedis, CacheKeys } from '@autoguard/shared';
 import type { Offer } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
+import { success, list, errors } from '@/lib/api-response';
 
 // 创建 Offer 的验证 schema
 const createOfferSchema = z.object({
@@ -17,10 +17,7 @@ const createOfferSchema = z.object({
 export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   const { searchParams } = new URL(request.url);
@@ -53,21 +50,14 @@ export async function GET(request: Request) {
   const countResult = queryOne<{ count: number }>(countSql, countParams);
   const total = countResult?.count || 0;
 
-  return NextResponse.json({
-    success: true,
-    data: offers,
-    meta: { page, limit, total },
-  });
+  return list(offers, { page, limit, total });
 }
 
 // POST /api/offers - 创建新 Offer
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   try {
@@ -88,10 +78,7 @@ export async function POST(request: Request) {
     } while (attempts < 10);
 
     if (attempts >= 10) {
-      return NextResponse.json(
-        { error: { code: 'SUBDOMAIN_GENERATION_FAILED', message: 'Failed to generate subdomain' } },
-        { status: 500 }
-      );
+      return errors.internal('Failed to generate subdomain');
     }
 
     // 插入 Offer
@@ -145,28 +132,22 @@ export async function POST(request: Request) {
     // 获取创建的 Offer
     const offer = queryOne<Offer>('SELECT * FROM offers WHERE id = ?', [offerId]);
 
-    return NextResponse.json({
-      success: true,
-      data: {
+    return success(
+      {
         ...offer,
         access_urls: {
           system: `https://${subdomain}.autoguard.dev`,
           custom: null,
         },
       },
-    });
+      'Offer 创建成功，正在抓取页面'
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: error.errors } },
-        { status: 400 }
-      );
+      return errors.validation('Invalid input', { errors: error.errors });
     }
 
     console.error('Create offer error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } },
-      { status: 500 }
-    );
+    return errors.internal();
   }
 }
