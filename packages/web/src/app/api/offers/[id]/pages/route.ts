@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { queryOne, queryAll, execute } from '@autoguard/shared';
+import { queryOne, queryAll, execute, safeJsonParse } from '@autoguard/shared';
 import type { Offer, Page, PageType, ContentSource, SafePageType, PageStatus } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 
@@ -40,6 +40,14 @@ export async function GET(request: Request, { params }: Params) {
 
   // Map page_type to variant and status for frontend compatibility
   const mappedPages = pages.map((page) => {
+    const generationParams = page.generation_params
+      ? safeJsonParse<Record<string, unknown>>(page.generation_params, {})
+      : null;
+    const storedSourceUrl =
+      generationParams && typeof generationParams.source_url === 'string'
+        ? generationParams.source_url
+        : null;
+
     // Map page_type -> variant (money = a, safe = b)
     const variant = page.page_type === 'money' ? 'a' : 'b';
     // Map status: generated/published -> ready for frontend
@@ -51,10 +59,10 @@ export async function GET(request: Request, { params }: Params) {
       variant,
       page_type: page.page_type,
       source_type: page.content_source,
-      source_url: null, // Not stored in current schema
+      source_url: storedSourceUrl, // Stored in generation_params (if available)
       local_path: `/data/pages/${offer.subdomain}/${variant}/`,
       status: frontendStatus,
-      meta: page.generation_params ? JSON.parse(page.generation_params) : null,
+      meta: generationParams,
       safe_page_type: page.safe_page_type,
       competitors: page.competitors ? JSON.parse(page.competitors) : null,
       created_at: page.created_at,

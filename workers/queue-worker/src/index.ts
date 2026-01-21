@@ -49,13 +49,14 @@ interface PageGenerationJob {
   subdomain: string;
   safePageType?: 'review' | 'tips' | 'comparison' | 'guide';
   affiliateLink?: string;
+  competitors?: string[];
 }
 
 /**
  * 处理页面生成任务
  */
 async function processJob(job: PageGenerationJob): Promise<void> {
-  const { pageId, offerId, variant, action, sourceUrl, subdomain, affiliateLink } = job;
+  const { pageId, offerId, variant, action, sourceUrl, subdomain, affiliateLink, competitors } = job;
 
   console.log(`[Queue] Processing job: pageId=${pageId}, variant=${variant}, action=${action}`);
 
@@ -111,6 +112,7 @@ async function processJob(job: PageGenerationJob): Promise<void> {
         brandName: offer.brand_name,
         brandUrl: offer.brand_url,
         pageType: safePageType,
+        competitors: competitors || [],
         language: 'en',
         tone: 'professional',
         affiliateLink: offer.affiliate_link,

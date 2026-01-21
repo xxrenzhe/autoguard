@@ -35,6 +35,7 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
   const [modalVariant, setModalVariant] = useState<'a' | 'b'>('a');
   const [modalUrl, setModalUrl] = useState('');
   const [modalSafePageType, setModalSafePageType] = useState<'review' | 'tips' | 'comparison' | 'guide'>('review');
+  const [modalCompetitors, setModalCompetitors] = useState('');
 
   useEffect(() => {
     fetchPages();
@@ -66,6 +67,19 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
       return;
     }
 
+    const competitors =
+      action === 'ai_generate'
+        ? modalCompetitors
+            .split(/[\n,]+/)
+            .map((c) => c.trim())
+            .filter(Boolean)
+        : [];
+
+    if (action === 'ai_generate' && modalSafePageType === 'comparison' && competitors.length === 0) {
+      toast.error('Please enter at least one competitor for Comparison pages');
+      return;
+    }
+
     setGenerating(modalVariant);
     setShowModal(false);
 
@@ -78,6 +92,7 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
           action,
           source_url: action === 'scrape' ? (modalUrl || undefined) : undefined,
           safe_page_type: action === 'ai_generate' ? modalSafePageType : undefined,
+          competitors: action === 'ai_generate' && competitors.length > 0 ? competitors : undefined,
         }),
       });
 
@@ -104,6 +119,7 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
     } else {
       setModalUrl('');
       setModalSafePageType('review');
+      setModalCompetitors('');
     }
     setShowModal(true);
   }
@@ -370,6 +386,22 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
                       <option value="comparison">Comparison</option>
                       <option value="guide">Guide</option>
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Competitors {modalSafePageType === 'comparison' ? '(required)' : '(optional)'}
+                    </label>
+                    <textarea
+                      value={modalCompetitors}
+                      onChange={(e) => setModalCompetitors(e.target.value)}
+                      placeholder="Canva, Adobe Premiere, ..."
+                      rows={3}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    <p className="mt-2 text-xs text-gray-500">
+                      Enter competitor names separated by commas or new lines.
+                    </p>
                   </div>
 
                   <div className="p-4 bg-blue-50 rounded-lg text-sm text-blue-800">

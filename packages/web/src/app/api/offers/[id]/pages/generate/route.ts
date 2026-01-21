@@ -12,6 +12,7 @@ const generatePageSchema = z.object({
   action: z.enum(['scrape', 'ai_generate']),
   source_url: z.string().url().optional(), // 仅 scrape 需要
   safe_page_type: z.enum(['review', 'tips', 'comparison', 'guide']).optional(), // AI 生成时可选
+  competitors: z.array(z.string().min(1).max(200)).max(50).optional(),
 });
 
 export async function POST(request: Request, { params }: Params) {
@@ -74,6 +75,8 @@ export async function POST(request: Request, { params }: Params) {
     let sourceUrl: string;
     // 将 variant a/b 映射到 page_type money/safe
     const pageType = data.variant === 'a' ? 'money' : 'safe';
+    const safePageType = pageType === 'safe' ? (data.safe_page_type || 'review') : null;
+    const competitors = pageType === 'safe' ? (data.competitors || []) : null;
 
     if (data.action === 'scrape') {
       if (data.variant === 'a') {
@@ -94,22 +97,51 @@ export async function POST(request: Request, { params }: Params) {
       [offerId, pageType]
     );
 
+    const generationParams =
+      pageType === 'money'
+        ? JSON.stringify({ source_url: sourceUrl })
+        : JSON.stringify({ safe_page_type: safePageType, competitors });
+
     if (page) {
       // 更新状态为生成中
       execute(
         `UPDATE pages SET
           content_source = ?,
+          safe_page_type = COALESCE(?, safe_page_type),
+          competitors = COALESCE(?, competitors),
+          generation_params = COALESCE(?, generation_params),
+          generation_error = NULL,
           status = 'generating',
           updated_at = CURRENT_TIMESTAMP
         WHERE id = ?`,
-        [data.action === 'scrape' ? 'scraped' : 'generated', page.id]
+        [
+          data.action === 'scrape' ? 'scraped' : 'generated',
+          safePageType,
+          competitors ? JSON.stringify(competitors) : null,
+          generationParams,
+          page.id,
+        ]
       );
     } else {
       // 创建新页面记录
       const result = execute(
-        `INSERT INTO pages (offer_id, page_type, content_source, status)
-         VALUES (?, ?, ?, 'generating')`,
-        [offerId, pageType, data.action === 'scrape' ? 'scraped' : 'generated']
+        `INSERT INTO pages (
+          offer_id,
+          page_type,
+          content_source,
+          safe_page_type,
+          competitors,
+          generation_params,
+          status
+        ) VALUES (?, ?, ?, ?, ?, ?, 'generating')`,
+        [
+          offerId,
+          pageType,
+          data.action === 'scrape' ? 'scraped' : 'generated',
+          safePageType,
+          competitors ? JSON.stringify(competitors) : null,
+          generationParams,
+        ]
       );
       page = queryOne<Page>('SELECT * FROM pages WHERE id = ?', [result.lastInsertRowid]);
     }
@@ -123,8 +155,9 @@ export async function POST(request: Request, { params }: Params) {
       action: data.action,
       sourceUrl,
       subdomain: offer.subdomain,
-      safePageType: data.safe_page_type,
+      safePageType: safePageType || undefined,
       affiliateLink: offer.affiliate_link,
+      competitors: competitors || undefined,
     };
 
     await redis.lpush(CacheKeys.queue.pageGeneration, JSON.stringify(job));
