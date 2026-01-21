@@ -13,7 +13,7 @@ import {
   getRedis,
   CacheKeys,
   safeJsonParse,
-  isValidIPv4,
+  isValidIP,
   isValidCIDR,
 } from '@autoguard/shared';
 import Database from 'better-sqlite3';
@@ -128,7 +128,7 @@ function parseBlacklistSourceContent(text: string): {
 
     const reason = (reasonRaw || '').trim() || null;
 
-    if (isValidIPv4(value)) {
+    if (isValidIP(value)) {
       if (!ips.has(value)) ips.set(value, reason);
       continue;
     }

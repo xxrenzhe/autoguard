@@ -10,6 +10,14 @@ export declare function generateDomainVerificationToken(): string;
  */
 export declare function isValidIPv4(ip: string): boolean;
 /**
+ * 验证 IPv6 地址格式
+ */
+export declare function isValidIPv6(ip: string): boolean;
+/**
+ * 验证 IP 地址格式（IPv4/IPv6）
+ */
+export declare function isValidIP(ip: string): boolean;
+/**
  * 验证 CIDR 格式
  */
 export declare function isValidCIDR(cidr: string): boolean;

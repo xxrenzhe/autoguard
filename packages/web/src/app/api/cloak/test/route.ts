@@ -4,6 +4,7 @@ import type { Offer } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 import { makeDecision, initEngine, getDecisionReason } from '@autoguard/cloak';
 import { success, errors } from '@/lib/api-response';
+import { withSnakeCaseAliases } from '@/lib/key-case';
 
 // Test cloak decision request schema
 const testRequestSchema = z.object({
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const body = await request.json();
+    const body = withSnakeCaseAliases(await request.json());
     const data = testRequestSchema.parse(body);
 
     // Get the offer

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { isValidCIDR } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 import { success, errors } from '@/lib/api-response';
+import net from 'net';
 
 const validateSchema = z.object({
   cidr: z.string().min(1),
@@ -27,22 +28,55 @@ function numberToIp(num: number): string {
   ].join('.');
 }
 
-function cidrToRange(cidr: string): { ip_start: string; ip_end: string; total_ips: number } {
+type CIDRRangeResult =
+  | { version: 4; ipStart: string; ipEnd: string; totalIps: number }
+  | { version: 6; ipStart: null; ipEnd: null; totalIps: null };
+
+function cidrToRange(cidr: string): CIDRRangeResult {
   const [ip, prefixStr] = cidr.split('/');
-  const prefix = parseInt(prefixStr || '32', 10);
+  if (!ip || !prefixStr) {
+    throw new Error('Invalid CIDR format');
+  }
 
-  const ipNum = ipToNumber(ip || '0.0.0.0');
-  const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
-  const network = (ipNum & mask) >>> 0;
-  const broadcast = (network | (~mask >>> 0)) >>> 0;
+  const prefix = Number(prefixStr);
+  if (!Number.isInteger(prefix)) {
+    throw new Error('Invalid CIDR prefix');
+  }
 
-  const totalIps = Math.pow(2, 32 - prefix);
+  const version = net.isIP(ip);
+  if (version === 4) {
+    if (prefix < 0 || prefix > 32) {
+      throw new Error('Invalid CIDR prefix');
+    }
 
-  return {
-    ip_start: numberToIp(network),
-    ip_end: numberToIp(broadcast),
-    total_ips: totalIps,
-  };
+    const ipNum = ipToNumber(ip);
+    const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+    const network = (ipNum & mask) >>> 0;
+    const broadcast = (network | (~mask >>> 0)) >>> 0;
+    const totalIps = Math.pow(2, 32 - prefix);
+
+    return {
+      version: 4,
+      ipStart: numberToIp(network),
+      ipEnd: numberToIp(broadcast),
+      totalIps,
+    };
+  }
+
+  if (version === 6) {
+    if (prefix < 0 || prefix > 128) {
+      throw new Error('Invalid CIDR prefix');
+    }
+
+    return {
+      version: 6,
+      ipStart: null,
+      ipEnd: null,
+      totalIps: null,
+    };
+  }
+
+  throw new Error('Invalid IP version');
 }
 
 // POST /api/blacklist/ip-ranges/validate - Validate CIDR (SystemDesign2)
@@ -60,7 +94,13 @@ export async function POST(request: Request) {
       return success({ valid: false });
     }
 
-    const range = cidrToRange(cidr);
+    let range: ReturnType<typeof cidrToRange>;
+    try {
+      range = cidrToRange(cidr);
+    } catch (err) {
+      console.error('CIDR range compute error:', err);
+      return success({ valid: false });
+    }
 
     return success({
       valid: true,
@@ -75,4 +115,3 @@ export async function POST(request: Request) {
     return errors.internal();
   }
 }
-

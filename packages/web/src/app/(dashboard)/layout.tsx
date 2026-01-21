@@ -31,6 +31,12 @@ export default async function DashboardLayout({
                   Offers
                 </Link>
                 <Link
+                  href="/pages"
+                  className="text-gray-600 hover:text-gray-900 font-medium"
+                >
+                  Pages
+                </Link>
+                <Link
                   href="/blacklist"
                   className="text-gray-600 hover:text-gray-900 font-medium"
                 >
@@ -49,11 +55,25 @@ export default async function DashboardLayout({
                   Logs
                 </Link>
                 <Link
+                  href="/cloak-test"
+                  className="text-gray-600 hover:text-gray-900 font-medium"
+                >
+                  Cloak Test
+                </Link>
+                <Link
                   href="/settings"
                   className="text-gray-600 hover:text-gray-900 font-medium"
                 >
                   Settings
                 </Link>
+                {user.role === 'admin' ? (
+                  <Link
+                    href="/admin/queues"
+                    className="text-gray-600 hover:text-gray-900 font-medium"
+                  >
+                    Admin
+                  </Link>
+                ) : null}
               </nav>
             </div>
             <div className="flex items-center space-x-4">

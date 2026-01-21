@@ -15,7 +15,7 @@
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "test": "vitest"
+    "test": "vitest run"
   },
   "dependencies": {
     "@autoguard/shared": "workspace:*",

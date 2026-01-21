@@ -2,18 +2,18 @@
  * 统一 API 响应格式
  * 设计文档规范：
  * - 成功: { data: ..., message?: string }
- * - 列表: { data: [...], pagination: { page, limit, total, total_pages } }
+ * - 列表: { data: [...], pagination: { page, limit, total, totalPages } }
  * - 错误: { error: { code, message, details? } }
  */
 
 import { NextResponse } from 'next/server';
-import { withCamelCaseAliases } from './key-case';
+import { withCamelCasePrimary } from './key-case';
 
 export interface PaginationMeta {
   page: number;
   limit: number;
   total: number;
-  total_pages: number;
+  totalPages: number;
 }
 
 export interface APISuccessResponse<T> {
@@ -38,11 +38,11 @@ export interface APIErrorResponse {
  * 成功响应
  */
 export function success<T>(data: T, message?: string): NextResponse<APISuccessResponse<T>> {
-  const body: APISuccessResponse<T> = { data: withCamelCaseAliases(data) as T };
+  const body: APISuccessResponse<T> = { data: withCamelCasePrimary(data) as T };
   if (message) {
     body.message = message;
   }
-  return NextResponse.json(body);
+  return NextResponse.json(withCamelCasePrimary(body) as APISuccessResponse<T>);
 }
 
 /**
@@ -53,16 +53,16 @@ export function list<T>(
   pagination: { page: number; limit: number; total: number }
 ): NextResponse<APIListResponse<T>> {
   const body = {
-    data: withCamelCaseAliases(data) as T[],
+    data,
     pagination: {
       page: pagination.page,
       limit: pagination.limit,
       total: pagination.total,
-      total_pages: Math.ceil(pagination.total / pagination.limit),
+      totalPages: Math.ceil(pagination.total / pagination.limit),
     },
   };
 
-  return NextResponse.json(withCamelCaseAliases(body) as APIListResponse<T>);
+  return NextResponse.json(withCamelCasePrimary(body) as APIListResponse<T>);
 }
 
 /**
@@ -80,7 +80,7 @@ export function error(
   if (details) {
     body.error.details = details;
   }
-  return NextResponse.json(body, { status });
+  return NextResponse.json(withCamelCasePrimary(body) as APIErrorResponse, { status });
 }
 
 /**

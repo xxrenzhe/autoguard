@@ -5,22 +5,23 @@
  * - AI 页面生成 (ai_generate)
  */
 
-import {
-  getRedis,
-  CacheKeys,
-  queryOne,
-  execute,
-  safeJsonParse,
-  Settings,
-} from '@autoguard/shared';
-import type { Offer, Page } from '@autoguard/shared';
-import {
-  scrapePage,
-  generateSafePage,
-  savePageWithProcessedPaths,
-  getPageDir,
-  ensureDir,
-} from '@autoguard/page-generator';
+import { getRedis, CacheKeys, safeJsonParse } from '@autoguard/shared';
+import { processPageGenerationJob } from './process-job';
+import type { PageGenerationJob } from './process-job';
+
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const value = parseInt(raw, 10);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function envFloat(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const value = parseFloat(raw);
+  return Number.isFinite(value) ? value : fallback;
+}
 
 // 配置
 const POLL_INTERVAL = parseInt(process.env.QUEUE_POLL_INTERVAL || '1000', 10);
@@ -29,6 +30,16 @@ const MAX_JOB_ATTEMPTS = Math.max(
   1,
   parseInt(process.env.PAGE_GENERATION_MAX_ATTEMPTS || '3', 10) || 3
 );
+
+const RETRY_BASE_DELAY_MS = Math.max(0, envInt('PAGE_GENERATION_RETRY_BASE_DELAY_MS', 2000));
+const RETRY_MAX_DELAY_MS = Math.max(
+  RETRY_BASE_DELAY_MS,
+  envInt('PAGE_GENERATION_RETRY_MAX_DELAY_MS', 60000)
+);
+const RETRY_JITTER_RATIO = Math.min(1, Math.max(0, envFloat('PAGE_GENERATION_RETRY_JITTER_RATIO', 0.2)));
+const DELAYED_MOVE_INTERVAL_MS = Math.max(250, envInt('PAGE_GENERATION_DELAYED_POLL_INTERVAL', 1000));
+const DELAYED_MOVE_BATCH_SIZE = Math.max(1, envInt('PAGE_GENERATION_DELAYED_BATCH_SIZE', 50));
+const QUEUE_METRICS_INTERVAL_MS = Math.max(500, envInt('QUEUE_METRICS_INTERVAL', 5000));
 
 // 任务状态
 interface JobStatus {
@@ -47,188 +58,90 @@ const jobStatus: JobStatus = {
   dead: 0,
 };
 
-// 任务接口
-interface PageGenerationJob {
-  pageId: number;
-  offerId: number;
-  variant: 'a' | 'b';
-  action: 'scrape' | 'ai_generate';
-  sourceUrl: string;
-  subdomain: string;
-  safePageType?: 'review' | 'tips' | 'comparison' | 'guide';
-  affiliateLink?: string;
-  competitors?: string[];
-  attempt?: number;
+type QueueMetrics = {
+  pending: number;
+  processing: number;
+  delayed: number;
+  dead: number;
+  updatedAt: string | null;
+};
+
+const queueMetrics: QueueMetrics = {
+  pending: 0,
+  processing: 0,
+  delayed: 0,
+  dead: 0,
+  updatedAt: null,
+};
+
+let delayedMoverTimer: NodeJS.Timeout | null = null;
+let metricsRefresherTimer: NodeJS.Timeout | null = null;
+
+const MOVE_DUE_DELAYED_JOBS_LUA = `
+local zsetKey = KEYS[1]
+local queueKey = KEYS[2]
+local now = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2])
+
+local items = redis.call('ZRANGEBYSCORE', zsetKey, '-inf', now, 'LIMIT', 0, limit)
+if #items == 0 then
+  return 0
+end
+
+redis.call('ZREM', zsetKey, unpack(items))
+for i = 1, #items do
+  redis.call('LPUSH', queueKey, items[i])
+end
+return #items
+`;
+
+function calculateRetryDelayMs(nextAttempt: number): number {
+  const exponential = Math.pow(2, Math.max(0, nextAttempt - 1));
+  const baseDelay = Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * exponential);
+  if (RETRY_JITTER_RATIO <= 0) return Math.round(baseDelay);
+
+  const jitter = baseDelay * RETRY_JITTER_RATIO;
+  const randomized = baseDelay + (Math.random() * 2 - 1) * jitter;
+  return Math.max(0, Math.round(Math.min(RETRY_MAX_DELAY_MS, randomized)));
+}
+
+async function moveDueDelayedJobs(
+  redis: ReturnType<typeof getRedis>,
+  delayedKey: string,
+  queueKey: string
+): Promise<number> {
+  const moved = await redis.eval(
+    MOVE_DUE_DELAYED_JOBS_LUA,
+    2,
+    delayedKey,
+    queueKey,
+    Date.now(),
+    DELAYED_MOVE_BATCH_SIZE
+  );
+  return Number(moved) || 0;
+}
+
+async function refreshQueueMetrics(
+  redis: ReturnType<typeof getRedis>,
+  keys: { queueKey: string; processingKey: string; delayedKey: string; deadKey: string }
+): Promise<void> {
+  const [pending, processing, delayed, dead] = await Promise.all([
+    redis.llen(keys.queueKey),
+    redis.llen(keys.processingKey),
+    redis.zcard(keys.delayedKey),
+    redis.llen(keys.deadKey),
+  ]);
+
+  queueMetrics.pending = pending;
+  queueMetrics.processing = processing;
+  queueMetrics.delayed = delayed;
+  queueMetrics.dead = dead;
+  queueMetrics.updatedAt = new Date().toISOString();
 }
 
 /**
- * 处理页面生成任务
+ * 从 processing 列表中确认（ack）任务，避免重复处理
  */
-async function processJob(
-  job: PageGenerationJob,
-  options: { finalAttempt: boolean }
-): Promise<void> {
-  const { pageId, offerId, variant, action, sourceUrl, subdomain, affiliateLink, competitors } = job;
-  const attempt = typeof job.attempt === 'number' ? job.attempt : 0;
-
-  console.log(
-    `[Queue] Processing job: pageId=${pageId}, variant=${variant}, action=${action}, attempt=${attempt + 1}/${MAX_JOB_ATTEMPTS}`
-  );
-
-  try {
-    let html: string;
-
-    if (action === 'scrape') {
-      // 抓取页面
-      const outputDir = getPageDir(subdomain, variant);
-      await ensureDir(outputDir);
-
-      const offer = queryOne<Pick<Offer, 'user_id'>>(
-        'SELECT user_id FROM offers WHERE id = ?',
-        [offerId]
-      );
-
-      const proxyEnabled = offer ? Settings.isProxyEnabled(offer.user_id) : false;
-      const proxyUrl = offer ? Settings.getProxyUrl(offer.user_id) : null;
-      const proxy = proxyEnabled ? proxyUrl || undefined : undefined;
-
-      if (proxyEnabled && !proxyUrl) {
-        console.warn(`[Queue] Proxy enabled but proxy_url is empty: offerId=${offerId}`);
-      }
-
-      const result = await scrapePage({
-        url: sourceUrl,
-        outputDir,
-        affiliateLink: affiliateLink,
-        proxy,
-        timeout: 30000,
-      });
-
-      if (!result.success || !result.html) {
-        throw new Error(result.errors.join(', ') || 'Scrape failed');
-      }
-
-      html = result.html;
-
-      // 更新 offer 抓取状态
-      if (variant === 'a') {
-        execute(
-          `UPDATE offers SET
-            scrape_status = 'completed',
-            scraped_at = CURRENT_TIMESTAMP,
-            page_title = ?,
-            page_description = ?,
-            updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?`,
-          [result.title || null, result.description || null, offerId]
-        );
-      }
-    } else {
-      // AI 生成 Safe Page
-      const safePageType = job.safePageType || 'review';
-
-      // 获取 offer 信息
-      const offer = queryOne<Offer>('SELECT * FROM offers WHERE id = ?', [offerId]);
-      if (!offer) {
-        throw new Error('Offer not found');
-      }
-
-      // 用户级 AI 配置（优先）→ 全局设置（回退）→ 环境变量（最终回退由 page-generator 内部处理）
-      const geminiApiKey = Settings.getGeminiApiKey(offer.user_id) || undefined;
-      const geminiModel = Settings.getGeminiModel(offer.user_id) || undefined;
-
-      const result = await generateSafePage({
-        brandName: offer.brand_name,
-        brandUrl: offer.brand_url,
-        pageType: safePageType,
-        competitors: competitors || [],
-        language: 'en',
-        tone: 'professional',
-        affiliateLink: offer.affiliate_link,
-        apiKey: geminiApiKey,
-        model: geminiModel,
-      });
-
-      if (!result.success || !result.html) {
-        throw new Error(result.error || 'AI generation failed');
-      }
-
-      html = result.html;
-    }
-
-    // 保存页面（处理资源路径）
-    await savePageWithProcessedPaths(subdomain, variant, html);
-
-    // 更新页面状态为生成完成
-    execute(
-      `UPDATE pages SET
-        status = 'generated',
-        html_content = ?,
-        generation_error = NULL,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?`,
-      [html, pageId]
-    );
-
-    console.log(`[Queue] Job completed: pageId=${pageId}`);
-    jobStatus.completed++;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(
-      `[Queue] Job failed: pageId=${pageId}, attempt=${attempt + 1}/${MAX_JOB_ATTEMPTS}, error=${errorMessage}`
-    );
-
-    if (options.finalAttempt) {
-      // 最终失败：更新页面状态为失败
-      execute(
-        `UPDATE pages SET
-          status = 'failed',
-          generation_error = ?,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?`,
-        [errorMessage, pageId]
-      );
-
-      // 如果是 money page 抓取最终失败，更新 offer 状态
-      if (job.variant === 'a' && job.action === 'scrape') {
-        execute(
-          `UPDATE offers SET
-            scrape_status = 'failed',
-            scrape_error = ?,
-            updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?`,
-          [errorMessage, offerId]
-        );
-      }
-    } else {
-      // 将失败信息写入 generation_error，但保持 generating，便于 UI 展示“重试中”
-      execute(
-        `UPDATE pages SET
-          status = 'generating',
-          generation_error = ?,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?`,
-        [errorMessage, pageId]
-      );
-
-      // Money page 抓取失败但会重试：保持 scraping，记录错误
-      if (job.variant === 'a' && job.action === 'scrape') {
-        execute(
-          `UPDATE offers SET
-            scrape_status = 'scraping',
-            scrape_error = ?,
-            updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?`,
-          [errorMessage, offerId]
-        );
-      }
-    }
-
-    jobStatus.failed++;
-    throw new Error(errorMessage);
-  }
-}
-
 async function acknowledgeJob(
   redis: ReturnType<typeof getRedis>,
   processingKey: string,
@@ -260,14 +173,46 @@ async function requeueStuckJobs(
 /**
  * 从队列获取任务
  */
-async function pollQueue(): Promise<void> {
-  const redis = getRedis();
+async function pollQueue(redis: ReturnType<typeof getRedis>): Promise<void> {
   const queueKey = CacheKeys.queue.pageGeneration;
   const processingKey = `${queueKey}:processing`;
+  const delayedKey = `${queueKey}:delayed`;
   const deadKey = `${queueKey}:dead`;
 
   // 进程重启后，将遗留在 processing 的任务放回 pending
   await requeueStuckJobs(redis, processingKey, queueKey);
+
+  // 启动时先搬一次到期的 delayed job，避免延迟队列积压
+  try {
+    const moved = await moveDueDelayedJobs(redis, delayedKey, queueKey);
+    if (moved > 0) {
+      console.warn(`[Queue] Moved ${moved} delayed jobs to pending on startup`);
+    }
+  } catch (error) {
+    console.error('[Queue] Failed to move delayed jobs on startup:', error);
+  }
+
+  // 周期性搬运 delayed -> pending（持久化延迟重试，避免进程内 setTimeout 丢任务）
+  if (delayedMoverTimer) clearInterval(delayedMoverTimer);
+  delayedMoverTimer = setInterval(() => {
+    moveDueDelayedJobs(redis, delayedKey, queueKey)
+      .then((moved) => {
+        if (moved > 0) {
+          console.log(`[Queue] Moved ${moved} delayed jobs to pending`);
+        }
+      })
+      .catch((error) => {
+        console.error('[Queue] Failed to move delayed jobs:', error);
+      });
+  }, DELAYED_MOVE_INTERVAL_MS);
+
+  // 周期性刷新队列长度，便于日志/面板查看
+  if (metricsRefresherTimer) clearInterval(metricsRefresherTimer);
+  metricsRefresherTimer = setInterval(() => {
+    refreshQueueMetrics(redis, { queueKey, processingKey, delayedKey, deadKey }).catch((error) => {
+      console.error('[Queue] Failed to refresh queue metrics:', error);
+    });
+  }, QUEUE_METRICS_INTERVAL_MS);
 
   while (true) {
     try {
@@ -296,26 +241,35 @@ async function pollQueue(): Promise<void> {
       jobStatus.running++;
       (async () => {
         try {
-          await processJob(job, { finalAttempt });
+          await processPageGenerationJob(job, { finalAttempt, maxAttempts: MAX_JOB_ATTEMPTS });
+          jobStatus.completed++;
         } catch (err) {
+          jobStatus.failed++;
           const errorMessage = err instanceof Error ? err.message : String(err);
 
           if (!finalAttempt) {
             const nextAttempt = attempt + 1;
+            const delayMs = calculateRetryDelayMs(nextAttempt);
             const retryJob: PageGenerationJob = {
               ...job,
               attempt: nextAttempt,
             };
 
             try {
-              // 推到队尾，避免立即重复消费
-              await redis.rpush(queueKey, JSON.stringify(retryJob));
+              await redis.zadd(delayedKey, Date.now() + delayMs, JSON.stringify(retryJob));
               jobStatus.retried++;
               console.warn(
-                `[Queue] Re-queued job for retry: pageId=${job.pageId} attempt=${nextAttempt}/${MAX_JOB_ATTEMPTS}`
+                `[Queue] Scheduled job retry: pageId=${job.pageId} attempt=${nextAttempt}/${MAX_JOB_ATTEMPTS} delayMs=${delayMs}`
               );
             } catch (pushError) {
-              console.error('[Queue] Failed to re-queue job:', pushError);
+              // 兜底：延迟队列失败时回退到普通队列（避免任务丢失）
+              console.error('[Queue] Failed to schedule retry (fallback to queue):', pushError);
+              try {
+                await redis.lpush(queueKey, JSON.stringify(retryJob));
+                jobStatus.retried++;
+              } catch (fallbackError) {
+                console.error('[Queue] Failed to fallback re-queue job:', fallbackError);
+              }
             }
           } else {
             // 超过最大重试次数：进入 DLQ，便于排查/手动重放
@@ -363,9 +317,19 @@ function getStatus(): Record<string, unknown> {
   return {
     uptime: process.uptime(),
     jobs: jobStatus,
+    queue: queueMetrics,
     config: {
       pollInterval: POLL_INTERVAL,
       maxConcurrentJobs: MAX_CONCURRENT_JOBS,
+      retry: {
+        maxAttempts: MAX_JOB_ATTEMPTS,
+        baseDelayMs: RETRY_BASE_DELAY_MS,
+        maxDelayMs: RETRY_MAX_DELAY_MS,
+        jitterRatio: RETRY_JITTER_RATIO,
+        delayedPollIntervalMs: DELAYED_MOVE_INTERVAL_MS,
+        delayedBatchSize: DELAYED_MOVE_BATCH_SIZE,
+        metricsIntervalMs: QUEUE_METRICS_INTERVAL_MS,
+      },
     },
   };
 }
@@ -375,6 +339,16 @@ function getStatus(): Record<string, unknown> {
  */
 function gracefulShutdown(): void {
   console.log('[Queue] Shutting down...');
+
+  if (delayedMoverTimer) {
+    clearInterval(delayedMoverTimer);
+    delayedMoverTimer = null;
+  }
+
+  if (metricsRefresherTimer) {
+    clearInterval(metricsRefresherTimer);
+    metricsRefresherTimer = null;
+  }
 
   // 等待当前任务完成
   const checkRunning = setInterval(() => {
@@ -401,6 +375,24 @@ async function start(): Promise<void> {
   console.log('[Queue] Starting queue worker...');
   console.log(`[Queue] Poll interval: ${POLL_INTERVAL}ms`);
   console.log(`[Queue] Max concurrent jobs: ${MAX_CONCURRENT_JOBS}`);
+  console.log(
+    `[Queue] Retry: maxAttempts=${MAX_JOB_ATTEMPTS} baseDelayMs=${RETRY_BASE_DELAY_MS} maxDelayMs=${RETRY_MAX_DELAY_MS} jitterRatio=${RETRY_JITTER_RATIO}`
+  );
+
+  const redis = getRedis();
+
+  // 立即刷新一次队列长度，便于启动日志对齐
+  try {
+    const queueKey = CacheKeys.queue.pageGeneration;
+    await refreshQueueMetrics(redis, {
+      queueKey,
+      processingKey: `${queueKey}:processing`,
+      delayedKey: `${queueKey}:delayed`,
+      deadKey: `${queueKey}:dead`,
+    });
+  } catch (error) {
+    console.error('[Queue] Failed to refresh queue metrics on startup:', error);
+  }
 
   // 定期打印状态
   setInterval(() => {
@@ -408,7 +400,7 @@ async function start(): Promise<void> {
   }, 60000);
 
   // 开始轮询队列
-  await pollQueue();
+  await pollQueue(redis);
 }
 
 start().catch((err) => {

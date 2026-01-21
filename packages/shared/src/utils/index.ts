@@ -1,4 +1,5 @@
 import { customAlphabet } from 'nanoid';
+import net from 'net';
 
 // 导出 crypto 工具
 export * from './crypto';
@@ -46,19 +47,39 @@ export function isValidIPv4(ip: string): boolean {
 }
 
 /**
+ * 验证 IPv6 地址格式
+ */
+export function isValidIPv6(ip: string): boolean {
+  return net.isIPv6(ip);
+}
+
+/**
+ * 验证 IP 地址格式（IPv4/IPv6）
+ */
+export function isValidIP(ip: string): boolean {
+  return net.isIP(ip) !== 0;
+}
+
+/**
  * 验证 CIDR 格式
  */
 export function isValidCIDR(cidr: string): boolean {
-  const pattern = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/;
-  if (!pattern.test(cidr)) return false;
-
   const [ip, prefixStr] = cidr.split('/');
   if (!ip || !prefixStr) return false;
 
-  if (!isValidIPv4(ip)) return false;
+  if (!/^\d+$/.test(prefixStr)) return false;
+  const prefix = Number(prefixStr);
 
-  const prefix = parseInt(prefixStr, 10);
-  return prefix >= 0 && prefix <= 32;
+  const version = net.isIP(ip);
+  if (version === 4) {
+    return prefix >= 0 && prefix <= 32;
+  }
+
+  if (version === 6) {
+    return prefix >= 0 && prefix <= 128;
+  }
+
+  return false;
 }
 
 /**
@@ -68,12 +89,34 @@ export function ipInCIDR(ip: string, cidr: string): boolean {
   const [cidrIp, prefixStr] = cidr.split('/');
   if (!cidrIp || !prefixStr) return false;
 
-  const prefix = parseInt(prefixStr, 10);
-  const ipNum = ipToNumber(ip);
-  const cidrNum = ipToNumber(cidrIp);
-  const mask = (0xffffffff << (32 - prefix)) >>> 0;
+  if (!/^\d+$/.test(prefixStr)) return false;
+  const prefix = Number(prefixStr);
 
-  return (ipNum & mask) === (cidrNum & mask);
+  const ipVersion = net.isIP(ip);
+  const cidrVersion = net.isIP(cidrIp);
+  if (ipVersion === 0 || cidrVersion === 0 || ipVersion !== cidrVersion) return false;
+
+  if (ipVersion === 4) {
+    if (prefix < 0 || prefix > 32) return false;
+    const ipNum = ipToNumber(ip);
+    const cidrNum = ipToNumber(cidrIp);
+    const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+    return (ipNum & mask) === (cidrNum & mask);
+  }
+
+  if (prefix < 0 || prefix > 128) return false;
+
+  try {
+    const ipNum = ipv6ToBigInt(ip);
+    const cidrNum = ipv6ToBigInt(cidrIp);
+    const mask =
+      prefix === 0
+        ? 0n
+        : ((1n << BigInt(prefix)) - 1n) << BigInt(128 - prefix);
+    return (ipNum & mask) === (cidrNum & mask);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -88,6 +131,59 @@ function ipToNumber(ip: string): number {
       parseInt(parts[3]!, 10)) >>>
     0
   );
+}
+
+function ipv6ToBigInt(rawIp: string): bigint {
+  let ip = rawIp;
+  const zoneIndex = ip.indexOf('%');
+  if (zoneIndex !== -1) {
+    ip = ip.slice(0, zoneIndex);
+  }
+
+  // Handle IPv4-mapped IPv6 (e.g. ::ffff:192.168.0.1)
+  if (ip.includes('.')) {
+    const lastColon = ip.lastIndexOf(':');
+    const ipv4Part = ip.slice(lastColon + 1);
+    const ipv4Num = ipToNumber(ipv4Part);
+    const high = ((ipv4Num >>> 16) & 0xffff).toString(16);
+    const low = (ipv4Num & 0xffff).toString(16);
+    ip = `${ip.slice(0, lastColon)}:${high}:${low}`;
+  }
+
+  const doubleColonIndex = ip.indexOf('::');
+  let groups: string[];
+
+  if (doubleColonIndex !== -1) {
+    const parts = ip.split('::');
+    if (parts.length !== 2) {
+      throw new Error('Invalid IPv6 format');
+    }
+    const [left, right] = parts;
+    const leftGroups = left ? left.split(':').filter(Boolean) : [];
+    const rightGroups = right ? right.split(':').filter(Boolean) : [];
+    const missing = 8 - (leftGroups.length + rightGroups.length);
+    if (missing < 0) {
+      throw new Error('Invalid IPv6 format');
+    }
+    groups = [...leftGroups, ...Array(missing).fill('0'), ...rightGroups];
+  } else {
+    groups = ip.split(':').filter(Boolean);
+  }
+
+  if (groups.length !== 8) {
+    throw new Error('Invalid IPv6 format');
+  }
+
+  let result = 0n;
+  for (const group of groups) {
+    const value = parseInt(group, 16);
+    if (!Number.isFinite(value) || value < 0 || value > 0xffff) {
+      throw new Error('Invalid IPv6 group');
+    }
+    result = (result << 16n) + BigInt(value);
+  }
+
+  return result;
 }
 
 /**

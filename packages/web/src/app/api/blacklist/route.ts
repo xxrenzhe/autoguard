@@ -8,6 +8,7 @@ import {
   syncIPRangeBlacklist,
   syncISPBlacklist,
   syncUABlacklist,
+  isValidCIDR,
 } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 import { success, list, errors } from '@/lib/api-response';
@@ -90,14 +91,17 @@ const queryParamsSchema = z.object({
 const addEntrySchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('ip'),
-    value: z.string().ip({ version: 'v4' }),
+    value: z.string().ip(),
     reason: z.string().max(500).optional(),
     source: z.string().max(100).optional(),
     expires_at: z.string().datetime().optional().nullable(),
   }),
   z.object({
     type: z.literal('ip_range'),
-    value: z.string().regex(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/, 'Invalid CIDR format'),
+    value: z
+      .string()
+      .min(1)
+      .refine((cidr) => isValidCIDR(cidr), { message: 'Invalid CIDR format' }),
     reason: z.string().max(500).optional(),
     source: z.string().max(100).optional(),
     expires_at: z.string().datetime().optional().nullable(),

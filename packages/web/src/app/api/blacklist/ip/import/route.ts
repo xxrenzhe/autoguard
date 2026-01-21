@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { execute, queryOne, syncIPBlacklist, isValidIPv4 } from '@autoguard/shared';
+import { execute, queryOne, syncIPBlacklist, isValidIP } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 import { success, errors } from '@/lib/api-response';
 
@@ -177,7 +177,7 @@ export async function POST(request: Request) {
       const ip = item.ip.trim();
       if (!ip) continue;
 
-      if (!isValidIPv4(ip)) {
+      if (!isValidIP(ip)) {
         failed++;
         errorsList.push({ line: item.line, ip, error: '无效的 IP 格式' });
         continue;
@@ -222,4 +222,3 @@ export async function POST(request: Request) {
     return errors.internal('Failed to import IPs');
   }
 }
-
