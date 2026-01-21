@@ -15,6 +15,10 @@ function buildTxtDomain(domain: string): string {
   return parentDomain ? `${txtHost}.${parentDomain}` : txtHost;
 }
 
+function buildExpectedTxtValue(token: string): string {
+  return `ag-verify=${token}`;
+}
+
 async function invalidateOfferCache(offer: Offer): Promise<void> {
   try {
     const redis = getRedis();
@@ -68,6 +72,7 @@ export async function POST(request: Request, { params }: Params) {
 
   const domain = offer.custom_domain;
   const expectedToken = offer.custom_domain_token;
+  const expectedTxtValue = buildExpectedTxtValue(expectedToken);
   const pingUrl = `https://${domain}/__autoguard/ping`;
   const txtDomain = buildTxtDomain(domain);
 
@@ -82,7 +87,7 @@ export async function POST(request: Request, { params }: Params) {
     const flatRecords = txtRecords.flat().filter(Boolean);
 
     txtFound = flatRecords.length > 0 ? flatRecords.join(', ') : null;
-    txtOk = flatRecords.includes(expectedToken);
+    txtOk = flatRecords.includes(expectedTxtValue);
   } catch (dnsError: unknown) {
     const err = dnsError as NodeJS.ErrnoException;
     if (err.code !== 'ENODATA' && err.code !== 'ENOTFOUND') {
@@ -154,9 +159,8 @@ export async function POST(request: Request, { params }: Params) {
   return apiError('DOMAIN_VERIFICATION_FAILED', 'DNS 记录未正确配置', 400, {
     txt_ok: txtOk,
     http_ok: httpOk,
-    txt_expected: expectedToken,
+    txt_expected: expectedTxtValue,
     txt_found: txtFound,
     ping_url: pingUrl,
   });
 }
-

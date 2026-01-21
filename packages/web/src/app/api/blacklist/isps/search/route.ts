@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { queryAll } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
+import { success, errors } from '@/lib/api-response';
 
 const searchSchema = z.object({
   query: z.string().optional(),
@@ -22,10 +22,7 @@ interface ISPEntry {
 export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   try {
@@ -49,28 +46,22 @@ export async function GET(request: Request) {
 
     const entries = queryAll<ISPEntry>(sql, sqlParams);
 
-    return NextResponse.json({
-      data: entries.map((entry) => ({
+    return success(
+      entries.map((entry) => ({
         id: entry.id,
         asn: entry.asn,
         isp_name: entry.isp_name,
         reason: entry.reason,
         source: entry.source,
         label: entry.isp_name || entry.asn || 'Unknown',
-      })),
-    });
+      }))
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: { code: 'VALIDATION_ERROR', message: 'Invalid parameters', details: error.errors } },
-        { status: 400 }
-      );
+      return errors.validation('Invalid parameters', { errors: error.errors });
     }
 
     console.error('ISP search error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } },
-      { status: 500 }
-    );
+    return errors.internal();
   }
 }

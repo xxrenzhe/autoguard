@@ -5,6 +5,12 @@ const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ['better-sqlite3'],
   },
+  async rewrites() {
+    return [
+      // SystemDesign2: expose APIs under /api/v1/*
+      { source: '/api/v1/:path*', destination: '/api/:path*' },
+    ];
+  },
 };
 
 module.exports = nextConfig;

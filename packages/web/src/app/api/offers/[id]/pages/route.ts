@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { queryOne, queryAll, execute, safeJsonParse } from '@autoguard/shared';
-import type { Offer, Page, PageType, ContentSource, SafePageType, PageStatus } from '@autoguard/shared';
+import type { Offer, Page } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
+import { success, errors } from '@/lib/api-response';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -10,10 +10,7 @@ type Params = { params: Promise<{ id: string }> };
 export async function GET(request: Request, { params }: Params) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   const { id } = await params;
@@ -26,10 +23,7 @@ export async function GET(request: Request, { params }: Params) {
   );
 
   if (!offer) {
-    return NextResponse.json(
-      { error: { code: 'NOT_FOUND', message: 'Offer not found' } },
-      { status: 404 }
-    );
+    return errors.notFound('Offer not found');
   }
 
   // 获取页面列表
@@ -70,16 +64,13 @@ export async function GET(request: Request, { params }: Params) {
     };
   });
 
-  return NextResponse.json({
-    success: true,
-    data: {
-      offer: {
-        id: offer.id,
-        brand_name: offer.brand_name,
-        subdomain: offer.subdomain,
-      },
-      pages: mappedPages,
+  return success({
+    offer: {
+      id: offer.id,
+      brand_name: offer.brand_name,
+      subdomain: offer.subdomain,
     },
+    pages: mappedPages,
   });
 }
 
@@ -95,10 +86,7 @@ const createPageSchema = z.object({
 export async function POST(request: Request, { params }: Params) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   const { id } = await params;
@@ -111,10 +99,7 @@ export async function POST(request: Request, { params }: Params) {
   );
 
   if (!offer) {
-    return NextResponse.json(
-      { error: { code: 'NOT_FOUND', message: 'Offer not found' } },
-      { status: 404 }
-    );
+    return errors.notFound('Offer not found');
   }
 
   try {
@@ -148,11 +133,7 @@ export async function POST(request: Request, { params }: Params) {
 
       const updatedPage = queryOne<Page>('SELECT * FROM pages WHERE id = ?', [existingPage.id]);
 
-      return NextResponse.json({
-        success: true,
-        data: updatedPage,
-        message: 'Page updated',
-      });
+      return success(updatedPage, 'Page updated');
     } else {
       // 创建新页面
       const result = execute(
@@ -170,24 +151,14 @@ export async function POST(request: Request, { params }: Params) {
 
       const newPage = queryOne<Page>('SELECT * FROM pages WHERE id = ?', [result.lastInsertRowid]);
 
-      return NextResponse.json({
-        success: true,
-        data: newPage,
-        message: 'Page created',
-      });
+      return success(newPage, 'Page created');
     }
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: error.errors } },
-        { status: 400 }
-      );
+      return errors.validation('Invalid input', { errors: error.errors });
     }
 
     console.error('Create/update page error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } },
-      { status: 500 }
-    );
+    return errors.internal();
   }
 }

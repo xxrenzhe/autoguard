@@ -1,15 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { queryAll, queryOne, execute } from '@autoguard/shared';
+import { success, errors } from '@/lib/api-response';
 
 /**
  * GET /api/admin/prompts - 获取所有 Prompt 列表
  */
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const session = await getSession();
     if (!session || session.role !== 'admin') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return errors.forbidden('需要管理员权限');
     }
 
     const prompts = queryAll<{
@@ -58,13 +59,10 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({ data });
+    return success(data);
   } catch (error) {
     console.error('Failed to get prompts:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return errors.internal('Internal server error');
   }
 }
 
@@ -75,17 +73,14 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getSession();
     if (!session || session.role !== 'admin') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return errors.forbidden('需要管理员权限');
     }
 
     const body = await request.json();
     const { name, description, category, content } = body;
 
     if (!name || !category || !content) {
-      return NextResponse.json(
-        { error: 'Missing required fields: name, category, content' },
-        { status: 400 }
-      );
+      return errors.validation('Missing required fields: name, category, content');
     }
 
     // 检查名称是否已存在
@@ -95,10 +90,7 @@ export async function POST(request: NextRequest) {
     );
 
     if (existing) {
-      return NextResponse.json(
-        { error: 'Prompt with this name already exists' },
-        { status: 409 }
-      );
+      return errors.conflict('Prompt with this name already exists');
     }
 
     // 创建 prompt
@@ -137,20 +129,15 @@ export async function POST(request: NextRequest) {
       ]);
     }
 
-    return NextResponse.json({
-      data: {
-        id: newPrompt.id,
-        name,
-        description,
-        category,
-        activeVersionId: version?.id,
-      },
+    return success({
+      id: newPrompt.id,
+      name,
+      description,
+      category,
+      activeVersionId: version?.id,
     });
   } catch (error) {
     console.error('Failed to create prompt:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return errors.internal('Internal server error');
   }
 }

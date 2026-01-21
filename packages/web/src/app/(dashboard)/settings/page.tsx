@@ -61,16 +61,19 @@ export default function SettingsPage() {
     try {
       const response = await fetch('/api/settings');
       const data = await response.json();
-      if (data.success) {
-        setSettings({
-          ...DEFAULT_SETTINGS,
-          ...data.data,
-          ai: { ...DEFAULT_SETTINGS.ai, ...data.data.ai },
-          proxy: { ...DEFAULT_SETTINGS.proxy, ...data.data.proxy },
-          cloak: { ...DEFAULT_SETTINGS.cloak, ...data.data.cloak },
-          system: { ...DEFAULT_SETTINGS.system, ...data.data.system },
-        });
+      if (!response.ok) {
+        toast.error(data.error?.message || 'Failed to load settings');
+        return;
       }
+
+      setSettings({
+        ...DEFAULT_SETTINGS,
+        ...data.data,
+        ai: { ...DEFAULT_SETTINGS.ai, ...data.data.ai },
+        proxy: { ...DEFAULT_SETTINGS.proxy, ...data.data.proxy },
+        cloak: { ...DEFAULT_SETTINGS.cloak, ...data.data.cloak },
+        system: { ...DEFAULT_SETTINGS.system, ...data.data.system },
+      });
     } catch {
       toast.error('Failed to load settings');
     } finally {
@@ -92,11 +95,12 @@ export default function SettingsPage() {
         body: JSON.stringify({ category, key, value, options }),
       });
       const data = await response.json();
-      if (data.success) {
-        toast.success('Setting saved');
-      } else {
+      if (!response.ok) {
         toast.error(data.error?.message || 'Failed to save setting');
+        return;
       }
+
+      toast.success(data.message || 'Setting saved');
     } catch {
       toast.error('Network error');
     } finally {

@@ -46,12 +46,13 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
       const response = await fetch(`/api/offers/${id}/pages`);
       const data = await response.json();
 
-      if (data.success) {
-        setOffer(data.data.offer);
-        setPages(data.data.pages);
-      } else {
+      if (!response.ok) {
         toast.error(data.error?.message || 'Failed to fetch pages');
+        return;
       }
+
+      setOffer(data.data.offer);
+      setPages(data.data.pages);
     } catch {
       toast.error('Network error');
     } finally {
@@ -98,13 +99,14 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
 
       const data = await response.json();
 
-      if (data.success) {
-        toast.success(data.data.message || 'Page generation started');
-        // Refresh pages list
-        fetchPages();
-      } else {
+      if (!response.ok) {
         toast.error(data.error?.message || 'Failed to start generation');
+        return;
       }
+
+      toast.success(data.message || 'Page generation started');
+      // Refresh pages list
+      fetchPages();
     } catch {
       toast.error('Network error');
     } finally {

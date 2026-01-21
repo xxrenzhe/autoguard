@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { queryAll, queryOne } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
+import { success, errors } from '@/lib/api-response';
 
 const queryParamsSchema = z.object({
   offer_id: z.coerce.number().int().positive().optional(),
@@ -14,10 +14,7 @@ const queryParamsSchema = z.object({
 export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   try {
@@ -64,10 +61,7 @@ export async function GET(request: Request) {
       );
 
       if (!offer) {
-        return NextResponse.json(
-          { error: { code: 'NOT_FOUND', message: 'Offer not found' } },
-          { status: 404 }
-        );
+        return errors.notFound('Offer not found');
       }
 
       whereClause += ' AND ds.offer_id = ?';
@@ -159,43 +153,34 @@ export async function GET(request: Request) {
       [today, user.userId]
     );
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        summary: {
-          total_visits: total,
-          money_page_visits: money,
-          safe_page_visits: safe,
-          cloak_rate: cloakRate,
-          money_rate: moneyRate,
-        },
-        detection_layers: {
-          l1_blacklist: layerStats?.l1_blocks || 0,
-          l2_ip_intel: layerStats?.l2_blocks || 0,
-          l3_geo: layerStats?.l3_blocks || 0,
-          l4_ua: layerStats?.l4_blocks || 0,
-          l5_referer: layerStats?.l5_blocks || 0,
-        },
-        decision_breakdown: decisionBreakdown,
-        hourly_today: hourlyDistribution,
-        period: {
-          start: startDate,
-          end: endDate,
-        },
+    return success({
+      summary: {
+        total_visits: total,
+        money_page_visits: money,
+        safe_page_visits: safe,
+        cloak_rate: cloakRate,
+        money_rate: moneyRate,
+      },
+      detection_layers: {
+        l1_blacklist: layerStats?.l1_blocks || 0,
+        l2_ip_intel: layerStats?.l2_blocks || 0,
+        l3_geo: layerStats?.l3_blocks || 0,
+        l4_ua: layerStats?.l4_blocks || 0,
+        l5_referer: layerStats?.l5_blocks || 0,
+      },
+      decision_breakdown: decisionBreakdown,
+      hourly_today: hourlyDistribution,
+      period: {
+        start: startDate,
+        end: endDate,
       },
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: { code: 'VALIDATION_ERROR', message: 'Invalid parameters', details: error.errors } },
-        { status: 400 }
-      );
+      return errors.validation('Invalid parameters', { errors: error.errors });
     }
 
     console.error('Fetch cloak stats error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } },
-      { status: 500 }
-    );
+    return errors.internal();
   }
 }

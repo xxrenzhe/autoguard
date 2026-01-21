@@ -62,11 +62,12 @@ export default function StatsPage() {
       const response = await fetch(`/api/stats?period=${period}`);
       const data = await response.json();
 
-      if (data.success) {
-        setStats(data.data);
-      } else {
+      if (!response.ok) {
         toast.error(data.error?.message || 'Failed to fetch statistics');
+        return;
       }
+
+      setStats(data.data);
     } catch {
       toast.error('Network error');
     } finally {

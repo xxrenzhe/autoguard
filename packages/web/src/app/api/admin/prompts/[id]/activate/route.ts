@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { queryOne, execute, invalidatePromptCache } from '@autoguard/shared';
+import { success, errors } from '@/lib/api-response';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -13,24 +14,21 @@ export async function PUT(request: NextRequest, context: RouteParams) {
   try {
     const session = await getSession();
     if (!session || session.role !== 'admin') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return errors.forbidden('需要管理员权限');
     }
 
     const { id } = await context.params;
     const promptId = parseInt(id, 10);
 
     if (isNaN(promptId)) {
-      return NextResponse.json({ error: 'Invalid prompt ID' }, { status: 400 });
+      return errors.validation('Invalid prompt ID');
     }
 
     const body = await request.json();
     const { versionId } = body;
 
     if (!versionId) {
-      return NextResponse.json(
-        { error: 'versionId is required' },
-        { status: 400 }
-      );
+      return errors.validation('versionId is required');
     }
 
     // 检查版本是否存在且属于该 prompt
@@ -40,10 +38,7 @@ export async function PUT(request: NextRequest, context: RouteParams) {
     );
 
     if (!version || version.prompt_id !== promptId) {
-      return NextResponse.json(
-        { error: 'Version not found or does not belong to this prompt' },
-        { status: 404 }
-      );
+      return errors.notFound('Version not found or does not belong to this prompt');
     }
 
     // 获取 prompt 名称用于清除缓存
@@ -75,12 +70,9 @@ export async function PUT(request: NextRequest, context: RouteParams) {
       await invalidatePromptCache(prompt.name);
     }
 
-    return NextResponse.json({ success: true });
+    return success({ ok: true });
   } catch (error) {
     console.error('Failed to activate version:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return errors.internal('Internal server error');
   }
 }

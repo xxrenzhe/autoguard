@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -34,13 +33,12 @@ interface User {
 }
 
 interface UsersResponse {
-  success: boolean;
   data: User[];
-  meta: {
+  pagination: {
     page: number;
     limit: number;
     total: number;
-    totalPages: number;
+    total_pages: number;
   };
 }
 
@@ -72,14 +70,21 @@ export default function AdminUsersPage() {
       if (statusFilter) params.set('status', statusFilter);
 
       const res = await fetch(`/api/admin/users?${params.toString()}`);
-      const data: UsersResponse = await res.json();
+      const data = await res.json();
 
-      if (data.success) {
-        setUsers(data.data);
-        setMeta(data.meta);
-      } else {
-        toast.error('获取用户列表失败');
+      if (!res.ok) {
+        toast.error((data as { error?: { message?: string } }).error?.message || '获取用户列表失败');
+        return;
       }
+
+      const parsed = data as UsersResponse;
+      setUsers(parsed.data);
+      setMeta({
+        page: parsed.pagination.page,
+        limit: parsed.pagination.limit,
+        total: parsed.pagination.total,
+        totalPages: parsed.pagination.total_pages,
+      });
     } catch {
       toast.error('网络错误');
     } finally {
@@ -105,14 +110,15 @@ export default function AdminUsersPage() {
       });
       const data = await res.json();
 
-      if (data.success) {
-        toast.success('用户创建成功');
-        setCreateDialogOpen(false);
-        setFormData({ email: '', password: '', display_name: '', role: 'user' });
-        fetchUsers();
-      } else {
+      if (!res.ok) {
         toast.error(data.error?.message || '创建失败');
+        return;
       }
+
+      toast.success('用户创建成功');
+      setCreateDialogOpen(false);
+      setFormData({ email: '', password: '', display_name: '', role: 'user' });
+      fetchUsers();
     } catch {
       toast.error('网络错误');
     }
@@ -132,14 +138,15 @@ export default function AdminUsersPage() {
       });
       const data = await res.json();
 
-      if (data.success) {
-        toast.success('用户更新成功');
-        setEditDialogOpen(false);
-        setSelectedUser(null);
-        fetchUsers();
-      } else {
+      if (!res.ok) {
         toast.error(data.error?.message || '更新失败');
+        return;
       }
+
+      toast.success('用户更新成功');
+      setEditDialogOpen(false);
+      setSelectedUser(null);
+      fetchUsers();
     } catch {
       toast.error('网络错误');
     }
@@ -156,12 +163,13 @@ export default function AdminUsersPage() {
       });
       const data = await res.json();
 
-      if (data.success) {
-        toast.success(`用户已${newStatus === 'active' ? '启用' : '停用'}`);
-        fetchUsers();
-      } else {
+      if (!res.ok) {
         toast.error(data.error?.message || '操作失败');
+        return;
       }
+
+      toast.success(`用户已${newStatus === 'active' ? '启用' : '停用'}`);
+      fetchUsers();
     } catch {
       toast.error('网络错误');
     }
@@ -178,12 +186,13 @@ export default function AdminUsersPage() {
       });
       const data = await res.json();
 
-      if (data.success) {
-        toast.success('用户已删除');
-        fetchUsers();
-      } else {
+      if (!res.ok) {
         toast.error(data.error?.message || '删除失败');
+        return;
       }
+
+      toast.success('用户已删除');
+      fetchUsers();
     } catch {
       toast.error('网络错误');
     }

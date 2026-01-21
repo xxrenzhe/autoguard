@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { queryOne, execute, getRedis, CacheKeys } from '@autoguard/shared';
 import type { Offer } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
+import { success, errors } from '@/lib/api-response';
 
 const cloakSchema = z.object({
   enabled: z.boolean(),
@@ -14,10 +14,7 @@ type Params = { params: Promise<{ id: string }> };
 export async function PATCH(request: Request, { params }: Params) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   const { id } = await params;
@@ -30,10 +27,7 @@ export async function PATCH(request: Request, { params }: Params) {
   );
 
   if (!offer) {
-    return NextResponse.json(
-      { error: { code: 'NOT_FOUND', message: 'Offer not found' } },
-      { status: 404 }
-    );
+    return errors.notFound('Offer not found');
   }
 
   try {
@@ -79,29 +73,22 @@ export async function PATCH(request: Request, { params }: Params) {
     // Return updated offer
     const updatedOffer = queryOne<Offer>('SELECT * FROM offers WHERE id = ?', [offerId]);
 
-    return NextResponse.json({
-      success: true,
-      data: {
+    return success(
+      {
         id: updatedOffer!.id,
         cloak_enabled: Boolean(updatedOffer!.cloak_enabled),
         cloak_enabled_at: updatedOffer!.cloak_enabled_at,
         cloak_disabled_at: updatedOffer!.cloak_disabled_at,
       },
-      message: data.enabled ? 'Cloak enabled' : 'Cloak disabled',
-    });
+      data.enabled ? 'Cloak enabled' : 'Cloak disabled'
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: error.errors } },
-        { status: 400 }
-      );
+      return errors.validation('Invalid input', { errors: error.errors });
     }
 
     console.error('Toggle cloak error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Failed to toggle cloak' } },
-      { status: 500 }
-    );
+    return errors.internal('Failed to toggle cloak');
   }
 }
 
@@ -109,10 +96,7 @@ export async function PATCH(request: Request, { params }: Params) {
 export async function GET(request: Request, { params }: Params) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   const { id } = await params;
@@ -124,19 +108,13 @@ export async function GET(request: Request, { params }: Params) {
   );
 
   if (!offer) {
-    return NextResponse.json(
-      { error: { code: 'NOT_FOUND', message: 'Offer not found' } },
-      { status: 404 }
-    );
+    return errors.notFound('Offer not found');
   }
 
-  return NextResponse.json({
-    success: true,
-    data: {
-      id: offer.id,
-      cloak_enabled: Boolean(offer.cloak_enabled),
-      cloak_enabled_at: offer.cloak_enabled_at,
-      cloak_disabled_at: offer.cloak_disabled_at,
-    },
+  return success({
+    id: offer.id,
+    cloak_enabled: Boolean(offer.cloak_enabled),
+    cloak_enabled_at: offer.cloak_enabled_at,
+    cloak_disabled_at: offer.cloak_disabled_at,
   });
 }

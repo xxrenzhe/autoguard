@@ -3,11 +3,12 @@
  * 单个用户管理接口
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { queryOne, execute, hashPassword } from '@autoguard/shared';
-import type { User } from '@autoguard/shared';
+import type { User, UserWithoutPassword } from '@autoguard/shared';
 import { z } from 'zod';
+import { success, errors } from '@/lib/api-response';
 
 // 更新用户请求验证
 const UpdateUserSchema = z.object({
@@ -28,45 +29,30 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getSession();
     if (!session || session.role !== 'admin') {
-      return NextResponse.json(
-        { success: false, error: { code: 'UNAUTHORIZED', message: '需要管理员权限' } },
-        { status: 403 }
-      );
+      return errors.forbidden('需要管理员权限');
     }
 
     const { id } = await params;
     const userId = parseInt(id, 10);
 
     if (isNaN(userId)) {
-      return NextResponse.json(
-        { success: false, error: { code: 'INVALID_ID', message: '无效的用户ID' } },
-        { status: 400 }
-      );
+      return errors.validation('无效的用户ID');
     }
 
-    const user = queryOne<User>(
+    const user = queryOne<UserWithoutPassword>(
       `SELECT id, email, display_name, role, status, last_login_at, created_at, updated_at
        FROM users WHERE id = ?`,
       [userId]
     );
 
     if (!user) {
-      return NextResponse.json(
-        { success: false, error: { code: 'NOT_FOUND', message: '用户不存在' } },
-        { status: 404 }
-      );
+      return errors.notFound('用户不存在');
     }
 
-    return NextResponse.json({
-      success: true,
-      data: user,
-    });
+    return success(user);
   } catch (error) {
     console.error('Get user error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: '获取用户信息失败' } },
-      { status: 500 }
-    );
+    return errors.internal('获取用户信息失败');
   }
 }
 
@@ -77,46 +63,27 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getSession();
     if (!session || session.role !== 'admin') {
-      return NextResponse.json(
-        { success: false, error: { code: 'UNAUTHORIZED', message: '需要管理员权限' } },
-        { status: 403 }
-      );
+      return errors.forbidden('需要管理员权限');
     }
 
     const { id } = await params;
     const userId = parseInt(id, 10);
 
     if (isNaN(userId)) {
-      return NextResponse.json(
-        { success: false, error: { code: 'INVALID_ID', message: '无效的用户ID' } },
-        { status: 400 }
-      );
+      return errors.validation('无效的用户ID');
     }
 
     // 检查用户是否存在
     const existingUser = queryOne<User>('SELECT * FROM users WHERE id = ?', [userId]);
     if (!existingUser) {
-      return NextResponse.json(
-        { success: false, error: { code: 'NOT_FOUND', message: '用户不存在' } },
-        { status: 404 }
-      );
+      return errors.notFound('用户不存在');
     }
 
     const body = await request.json();
     const parsed = UpdateUserSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: '输入验证失败',
-            details: parsed.error.errors,
-          },
-        },
-        { status: 400 }
-      );
+      return errors.validation('输入验证失败', { errors: parsed.error.errors });
     }
 
     const { display_name, role, status, password } = parsed.data;
@@ -133,10 +100,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (role !== undefined) {
       // 防止管理员降级自己
       if (userId === session.userId && role !== 'admin') {
-        return NextResponse.json(
-          { success: false, error: { code: 'FORBIDDEN', message: '不能降级自己的权限' } },
-          { status: 400 }
-        );
+        return errors.validation('不能降级自己的权限');
       }
       updates.push('role = ?');
       values.push(role);
@@ -145,10 +109,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (status !== undefined) {
       // 防止管理员封禁自己
       if (userId === session.userId && status === 'suspended') {
-        return NextResponse.json(
-          { success: false, error: { code: 'FORBIDDEN', message: '不能封禁自己' } },
-          { status: 400 }
-        );
+        return errors.validation('不能封禁自己');
       }
       updates.push('status = ?');
       values.push(status);
@@ -165,22 +126,16 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     execute(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, values);
 
     // 获取更新后的用户
-    const updatedUser = queryOne<User>(
+    const updatedUser = queryOne<UserWithoutPassword>(
       `SELECT id, email, display_name, role, status, last_login_at, created_at, updated_at
        FROM users WHERE id = ?`,
       [userId]
     );
 
-    return NextResponse.json({
-      success: true,
-      data: updatedUser,
-    });
+    return success(updatedUser);
   } catch (error) {
     console.error('Update user error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: '更新用户失败' } },
-      { status: 500 }
-    );
+    return errors.internal('更新用户失败');
   }
 }
 
@@ -191,51 +146,33 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getSession();
     if (!session || session.role !== 'admin') {
-      return NextResponse.json(
-        { success: false, error: { code: 'UNAUTHORIZED', message: '需要管理员权限' } },
-        { status: 403 }
-      );
+      return errors.forbidden('需要管理员权限');
     }
 
     const { id } = await params;
     const userId = parseInt(id, 10);
 
     if (isNaN(userId)) {
-      return NextResponse.json(
-        { success: false, error: { code: 'INVALID_ID', message: '无效的用户ID' } },
-        { status: 400 }
-      );
+      return errors.validation('无效的用户ID');
     }
 
     // 防止删除自己
     if (userId === session.userId) {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: '不能删除自己' } },
-        { status: 400 }
-      );
+      return errors.validation('不能删除自己');
     }
 
     // 检查用户是否存在
     const existingUser = queryOne<User>('SELECT id FROM users WHERE id = ?', [userId]);
     if (!existingUser) {
-      return NextResponse.json(
-        { success: false, error: { code: 'NOT_FOUND', message: '用户不存在' } },
-        { status: 404 }
-      );
+      return errors.notFound('用户不存在');
     }
 
     // 删除用户（级联删除关联数据）
     execute('DELETE FROM users WHERE id = ?', [userId]);
 
-    return NextResponse.json({
-      success: true,
-      data: { deleted: true },
-    });
+    return success({ deleted: true });
   } catch (error) {
     console.error('Delete user error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: '删除用户失败' } },
-      { status: 500 }
-    );
+    return errors.internal('删除用户失败');
   }
 }

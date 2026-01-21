@@ -1,15 +1,26 @@
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { queryOne, execute, getRedis, CacheKeys } from '@autoguard/shared';
 import type { Offer } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
+import { success, errors } from '@/lib/api-response';
 
 // ISO 3166-1 alpha-2 country code pattern
 const countryCodePattern = /^[A-Z]{2}$/;
 
-const targetCountriesSchema = z.object({
-  countries: z.array(z.string().regex(countryCodePattern, 'Invalid country code')).max(250),
-});
+const targetCountriesSchema = z
+  .object({
+    target_countries: z
+      .array(z.string().regex(countryCodePattern, 'Invalid country code'))
+      .max(250),
+    // Backward-compatible alias
+    countries: z
+      .array(z.string().regex(countryCodePattern, 'Invalid country code'))
+      .max(250)
+      .optional(),
+  })
+  .transform((value) => ({
+    target_countries: value.target_countries ?? value.countries ?? [],
+  }));
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -17,10 +28,7 @@ type Params = { params: Promise<{ id: string }> };
 export async function PATCH(request: Request, { params }: Params) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   const { id } = await params;
@@ -33,10 +41,7 @@ export async function PATCH(request: Request, { params }: Params) {
   );
 
   if (!offer) {
-    return NextResponse.json(
-      { error: { code: 'NOT_FOUND', message: 'Offer not found' } },
-      { status: 404 }
-    );
+    return errors.notFound('Offer not found');
   }
 
   try {
@@ -44,7 +49,9 @@ export async function PATCH(request: Request, { params }: Params) {
     const data = targetCountriesSchema.parse(body);
 
     // Normalize: ensure uppercase and unique
-    const normalizedCountries = [...new Set(data.countries.map(c => c.toUpperCase()))];
+    const normalizedCountries = [
+      ...new Set(data.target_countries.map((c) => c.toUpperCase())),
+    ];
 
     // Update target countries
     execute(
@@ -75,30 +82,21 @@ export async function PATCH(request: Request, { params }: Params) {
     // Return updated offer
     const updatedOffer = queryOne<Offer>('SELECT * FROM offers WHERE id = ?', [offerId]);
 
-    return NextResponse.json({
-      success: true,
-      data: {
+    return success(
+      {
         id: updatedOffer!.id,
         target_countries: normalizedCountries,
         target_countries_updated_at: updatedOffer!.target_countries_updated_at,
       },
-      message: normalizedCountries.length > 0
-        ? `Target regions updated to ${normalizedCountries.length} countries`
-        : 'Target regions removed (global targeting)',
-    });
+      '投放地区已更新'
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: error.errors } },
-        { status: 400 }
-      );
+      return errors.validation('Invalid input', { errors: error.errors });
     }
 
     console.error('Update target countries error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Failed to update target countries' } },
-      { status: 500 }
-    );
+    return errors.internal('Failed to update target countries');
   }
 }
 
@@ -106,10 +104,7 @@ export async function PATCH(request: Request, { params }: Params) {
 export async function GET(request: Request, { params }: Params) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   const { id } = await params;
@@ -121,21 +116,14 @@ export async function GET(request: Request, { params }: Params) {
   );
 
   if (!offer) {
-    return NextResponse.json(
-      { error: { code: 'NOT_FOUND', message: 'Offer not found' } },
-      { status: 404 }
-    );
+    return errors.notFound('Offer not found');
   }
 
   const targetCountries = offer.target_countries ? JSON.parse(offer.target_countries) : [];
 
-  return NextResponse.json({
-    success: true,
-    data: {
-      id: offer.id,
-      target_countries: targetCountries,
-      target_countries_updated_at: offer.target_countries_updated_at,
-      is_global: targetCountries.length === 0,
-    },
+  return success({
+    id: offer.id,
+    target_countries: targetCountries,
+    target_countries_updated_at: offer.target_countries_updated_at,
   });
 }

@@ -15,7 +15,7 @@ interface OfferDetail {
   custom_domain_status: string | null;
   custom_domain_verified_at: string | null;
   target_countries: string[];
-  cloak_enabled: number;
+  cloak_enabled: boolean;
   status: string;
   created_at: string;
   updated_at: string;
@@ -40,12 +40,13 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
     try {
       const response = await fetch(`/api/offers/${id}`);
       const data = await response.json();
-      if (data.success) {
-        setOffer(data.data);
-      } else {
+      if (!response.ok) {
         toast.error(data.error?.message || 'Failed to fetch offer');
         router.push('/offers');
+        return;
       }
+
+      setOffer(data.data);
     } catch {
       toast.error('Network error');
       router.push('/offers');
@@ -60,15 +61,16 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
       const response = await fetch(`/api/offers/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cloak_enabled: offer.cloak_enabled === 0 }),
+        body: JSON.stringify({ cloak_enabled: !offer.cloak_enabled }),
       });
       const data = await response.json();
-      if (data.success) {
-        setOffer({ ...offer, cloak_enabled: offer.cloak_enabled === 0 ? 1 : 0 });
-        toast.success(offer.cloak_enabled === 0 ? 'Cloak enabled' : 'Cloak disabled');
-      } else {
+      if (!response.ok) {
         toast.error(data.error?.message || 'Failed to toggle cloak');
+        return;
       }
+
+      setOffer({ ...offer, cloak_enabled: !offer.cloak_enabled });
+      toast.success(!offer.cloak_enabled ? 'Cloak enabled' : 'Cloak disabled');
     } catch {
       toast.error('Network error');
     }
@@ -83,12 +85,13 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
         body: JSON.stringify({ status: newStatus }),
       });
       const data = await response.json();
-      if (data.success) {
-        setOffer({ ...offer, status: newStatus });
-        toast.success(`Status updated to ${newStatus}`);
-      } else {
+      if (!response.ok) {
         toast.error(data.error?.message || 'Failed to update status');
+        return;
       }
+
+      setOffer({ ...offer, status: newStatus });
+      toast.success(`Status updated to ${newStatus}`);
     } catch {
       toast.error('Network error');
     }
@@ -102,12 +105,13 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
         method: 'DELETE',
       });
       const data = await response.json();
-      if (data.success) {
-        toast.success('Offer deleted');
-        router.push('/offers');
-      } else {
+      if (!response.ok) {
         toast.error(data.error?.message || 'Failed to delete offer');
+        return;
       }
+
+      toast.success('Offer deleted');
+      router.push('/offers');
     } catch {
       toast.error('Network error');
     } finally {

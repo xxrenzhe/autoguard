@@ -6,10 +6,10 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 
 interface DomainStatus {
-  custom_domain: string | null;
-  custom_domain_status: string | null;
-  custom_domain_verified_at: string | null;
-  custom_domain_token: string | null;
+  domain: string | null;
+  status: string;
+  verified_at: string | null;
+  token: string | null;
   cname_target: string;
 }
 
@@ -31,14 +31,15 @@ export default function CustomDomainPage({ params }: { params: Promise<{ id: str
     try {
       const response = await fetch(`/api/offers/${id}/custom-domain`);
       const data = await response.json();
-      if (data.success) {
-        setDomainStatus(data.data);
-        if (data.data.custom_domain) {
-          setNewDomain(data.data.custom_domain);
-        }
-      } else {
+      if (!response.ok) {
         toast.error(data.error?.message || 'Failed to fetch domain status');
         router.push(`/offers/${id}`);
+        return;
+      }
+
+      setDomainStatus(data.data);
+      if (data.data.domain) {
+        setNewDomain(data.data.domain);
       }
     } catch {
       toast.error('Network error');
@@ -71,12 +72,7 @@ export default function CustomDomainPage({ params }: { params: Promise<{ id: str
       }
 
       toast.success('Domain configured. Please add the CNAME record.');
-      setDomainStatus({
-        ...domainStatus!,
-        custom_domain: data.data.custom_domain,
-        custom_domain_status: 'pending',
-        custom_domain_verified_at: null,
-      });
+      await fetchDomainStatus();
     } catch {
       toast.error('Network error');
     } finally {
@@ -125,13 +121,8 @@ export default function CustomDomainPage({ params }: { params: Promise<{ id: str
       }
 
       toast.success('Custom domain removed');
-      setDomainStatus({
-        ...domainStatus!,
-        custom_domain: null,
-        custom_domain_status: null,
-        custom_domain_verified_at: null,
-      });
       setNewDomain('');
+      await fetchDomainStatus();
     } catch {
       toast.error('Network error');
     } finally {
@@ -165,32 +156,32 @@ export default function CustomDomainPage({ params }: { params: Promise<{ id: str
 
       <div className="bg-white rounded-lg shadow p-6 space-y-6">
         {/* Current Status */}
-        {domainStatus.custom_domain && (
+        {domainStatus.domain && (
           <div className="border-b pb-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Current Domain</h2>
             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
               <div>
-                <code className="text-lg font-mono">{domainStatus.custom_domain}</code>
+                <code className="text-lg font-mono">{domainStatus.domain}</code>
                 <div className="mt-2">
                   <span
                     className={`px-2 py-1 text-xs font-medium rounded-full ${
-                      domainStatus.custom_domain_status === 'verified'
+                      domainStatus.status === 'verified'
                         ? 'bg-green-100 text-green-800'
-                        : domainStatus.custom_domain_status === 'pending'
+                        : domainStatus.status === 'pending'
                         ? 'bg-yellow-100 text-yellow-800'
                         : 'bg-red-100 text-red-800'
                     }`}
                   >
-                    {domainStatus.custom_domain_status === 'verified'
+                    {domainStatus.status === 'verified'
                       ? 'Verified'
-                      : domainStatus.custom_domain_status === 'pending'
+                      : domainStatus.status === 'pending'
                       ? 'Pending Verification'
                       : 'Verification Failed'}
                   </span>
                 </div>
               </div>
               <div className="flex items-center space-x-2">
-                {domainStatus.custom_domain_status !== 'verified' && (
+                {domainStatus.status !== 'verified' && (
                   <button
                     onClick={handleVerify}
                     disabled={verifying}
@@ -210,7 +201,7 @@ export default function CustomDomainPage({ params }: { params: Promise<{ id: str
             </div>
 
             {/* DNS Instructions */}
-            {domainStatus.custom_domain_status !== 'verified' && (
+            {domainStatus.status !== 'verified' && (
               <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <h3 className="font-medium text-blue-900 mb-2">DNS Configuration Required</h3>
                 <p className="text-sm text-blue-800 mb-3">
@@ -227,7 +218,7 @@ export default function CustomDomainPage({ params }: { params: Promise<{ id: str
                     </div>
                     <div>
                       <span className="text-gray-500 text-xs block">Name</span>
-                      {domainStatus.custom_domain.split('.')[0]}
+                      {domainStatus.domain.split('.')[0]}
                     </div>
                     <div>
                       <span className="text-gray-500 text-xs block">Target</span>
@@ -237,7 +228,7 @@ export default function CustomDomainPage({ params }: { params: Promise<{ id: str
                 </div>
 
                 {/* TXT Record */}
-                {domainStatus.custom_domain_token && (
+                {domainStatus.token && (
                   <div className="bg-white rounded border p-3 font-mono text-sm">
                     <div className="text-xs text-gray-500 mb-2 font-sans font-medium">2. TXT Record (For Verification)</div>
                     <div className="grid grid-cols-3 gap-4">
@@ -247,11 +238,11 @@ export default function CustomDomainPage({ params }: { params: Promise<{ id: str
                       </div>
                       <div>
                         <span className="text-gray-500 text-xs block">Name</span>
-                        _autoguard.{domainStatus.custom_domain.split('.')[0]}
+                        _autoguard.{domainStatus.domain.split('.')[0]}
                       </div>
                       <div>
                         <span className="text-gray-500 text-xs block">Value</span>
-                        <span className="break-all">ag-verify={domainStatus.custom_domain_token}</span>
+                        <span className="break-all">ag-verify={domainStatus.token}</span>
                       </div>
                     </div>
                   </div>
@@ -263,9 +254,9 @@ export default function CustomDomainPage({ params }: { params: Promise<{ id: str
               </div>
             )}
 
-            {domainStatus.custom_domain_status === 'verified' && domainStatus.custom_domain_verified_at && (
+            {domainStatus.status === 'verified' && domainStatus.verified_at && (
               <p className="mt-3 text-sm text-gray-500">
-                Verified on {new Date(domainStatus.custom_domain_verified_at).toLocaleDateString()}
+                Verified on {new Date(domainStatus.verified_at).toLocaleDateString()}
               </p>
             )}
           </div>
@@ -274,7 +265,7 @@ export default function CustomDomainPage({ params }: { params: Promise<{ id: str
         {/* Set New Domain */}
         <div>
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            {domainStatus.custom_domain ? 'Change Domain' : 'Configure Domain'}
+            {domainStatus.domain ? 'Change Domain' : 'Configure Domain'}
           </h2>
           <form onSubmit={handleSetDomain} className="space-y-4">
             <div>
@@ -294,10 +285,10 @@ export default function CustomDomainPage({ params }: { params: Promise<{ id: str
             </div>
             <button
               type="submit"
-              disabled={saving || !newDomain.trim() || newDomain === domainStatus.custom_domain}
+              disabled={saving || !newDomain.trim() || newDomain === domainStatus.domain}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium"
             >
-              {saving ? 'Saving...' : domainStatus.custom_domain ? 'Update Domain' : 'Set Domain'}
+              {saving ? 'Saving...' : domainStatus.domain ? 'Update Domain' : 'Set Domain'}
             </button>
           </form>
         </div>

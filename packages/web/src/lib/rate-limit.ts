@@ -126,10 +126,14 @@ export function getRateLimitKey(
 export function rateLimitExceededResponse(result: RateLimitResult) {
   return new Response(
     JSON.stringify({
-      success: false,
       error: {
-        code: 'RATE_LIMIT_EXCEEDED',
+        code: 'RATE_LIMITED',
         message: 'Too many requests. Please try again later.',
+        details: {
+          limit: result.limit,
+          remaining: 0,
+          reset_at: result.resetAt,
+        },
       },
     }),
     {

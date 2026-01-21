@@ -24,7 +24,7 @@ interface OfferData {
   brand_url: string;
   affiliate_link: string;
   target_countries: string[];
-  cloak_enabled: number;
+  cloak_enabled: boolean;
   status: string;
 }
 
@@ -50,20 +50,21 @@ export default function EditOfferPage({ params }: { params: Promise<{ id: string
     try {
       const response = await fetch(`/api/offers/${id}`);
       const data = await response.json();
-      if (data.success) {
-        const offer: OfferData = data.data;
-        setFormData({
-          brand_name: offer.brand_name,
-          brand_url: offer.brand_url,
-          affiliate_link: offer.affiliate_link,
-          target_countries: offer.target_countries || [],
-          cloak_enabled: offer.cloak_enabled === 1,
-          status: offer.status,
-        });
-      } else {
+      if (!response.ok) {
         toast.error(data.error?.message || 'Failed to fetch offer');
         router.push('/offers');
+        return;
       }
+
+      const offer: OfferData = data.data;
+      setFormData({
+        brand_name: offer.brand_name,
+        brand_url: offer.brand_url,
+        affiliate_link: offer.affiliate_link,
+        target_countries: offer.target_countries || [],
+        cloak_enabled: offer.cloak_enabled,
+        status: offer.status,
+      });
     } catch {
       toast.error('Network error');
       router.push('/offers');

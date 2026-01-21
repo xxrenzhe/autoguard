@@ -1,9 +1,9 @@
-import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { queryOne, execute } from '@autoguard/shared';
 import type { User } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
+import { success, errors } from '@/lib/api-response';
 
 const changePasswordSchema = z.object({
   current_password: z.string().min(1, 'Current password is required'),
@@ -19,10 +19,7 @@ const changePasswordSchema = z.object({
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   try {
@@ -36,28 +33,19 @@ export async function POST(request: Request) {
     );
 
     if (!dbUser) {
-      return NextResponse.json(
-        { error: { code: 'NOT_FOUND', message: 'User not found' } },
-        { status: 404 }
-      );
+      return errors.notFound('User not found');
     }
 
     // Verify current password
     const isValid = await bcrypt.compare(data.current_password, dbUser.password_hash);
     if (!isValid) {
-      return NextResponse.json(
-        { error: { code: 'INVALID_PASSWORD', message: 'Current password is incorrect' } },
-        { status: 400 }
-      );
+      return errors.validation('Current password is incorrect');
     }
 
     // Prevent reusing the same password
     const isSamePassword = await bcrypt.compare(data.new_password, dbUser.password_hash);
     if (isSamePassword) {
-      return NextResponse.json(
-        { error: { code: 'SAME_PASSWORD', message: 'New password must be different from current password' } },
-        { status: 400 }
-      );
+      return errors.validation('New password must be different from current password');
     }
 
     // Hash new password
@@ -69,22 +57,13 @@ export async function POST(request: Request) {
       [newHash, user.userId]
     );
 
-    return NextResponse.json({
-      success: true,
-      message: 'Password changed successfully',
-    });
+    return success({ ok: true }, 'Password changed successfully');
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: error.errors } },
-        { status: 400 }
-      );
+      return errors.validation('Invalid input', { errors: error.errors });
     }
 
     console.error('Change password error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } },
-      { status: 500 }
-    );
+    return errors.internal();
   }
 }

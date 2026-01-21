@@ -49,7 +49,7 @@ export default function OfferStatsPage({ params }: { params: Promise<{ id: strin
       // Fetch offer details
       const offerRes = await fetch(`/api/offers/${id}`);
       const offerData = await offerRes.json();
-      if (offerData.success) {
+      if (offerRes.ok) {
         setOfferName(offerData.data.brand_name);
       }
 
@@ -57,11 +57,12 @@ export default function OfferStatsPage({ params }: { params: Promise<{ id: strin
       const response = await fetch(`/api/stats?period=${period}&offer_id=${id}`);
       const data = await response.json();
 
-      if (data.success) {
-        setStats(data.data);
-      } else {
+      if (!response.ok) {
         toast.error(data.error?.message || 'Failed to fetch statistics');
+        return;
       }
+
+      setStats(data.data);
     } catch {
       toast.error('Network error');
     } finally {

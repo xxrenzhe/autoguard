@@ -50,9 +50,43 @@ export async function GET() {
   const global = getCounts('AND user_id IS NULL', []);
   const userScoped = getCounts('AND user_id = ?', [user.userId]);
 
+  const hitsToday =
+    queryOne<{ count: number }>(
+      `SELECT COUNT(*) as count
+       FROM cloak_logs
+       WHERE user_id = ?
+         AND blocked_at_layer = 'L1'
+         AND DATE(created_at) = DATE('now')`,
+      [user.userId]
+    )?.count || 0;
+
+  const hitsWeek =
+    queryOne<{ count: number }>(
+      `SELECT COUNT(*) as count
+       FROM cloak_logs
+       WHERE user_id = ?
+         AND blocked_at_layer = 'L1'
+         AND created_at >= DATETIME('now', '-7 day')`,
+      [user.userId]
+    )?.count || 0;
+
   return success({
-    global,
-    user: userScoped,
+    counts: {
+      ip: global.ip,
+      ip_ranges: global.ip_ranges,
+      isps: global.isps,
+      uas: global.uas,
+      geos: global.geos,
+    },
+    hits_today: hitsToday,
+    hits_week: hitsWeek,
+    top_hits: [],
+    user_counts: {
+      ip: userScoped.ip,
+      ip_ranges: userScoped.ip_ranges,
+      isps: userScoped.isps,
+      uas: userScoped.uas,
+      geos: userScoped.geos,
+    },
   });
 }
-

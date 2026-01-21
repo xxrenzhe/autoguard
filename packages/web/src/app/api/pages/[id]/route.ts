@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import { queryOne, execute } from '@autoguard/shared';
 import type { Page } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
@@ -116,15 +115,5 @@ export async function DELETE(request: Request, { params }: Params) {
     console.error('Failed to delete page files:', err);
   }
 
-  return NextResponse.json(
-    {
-      data: {
-        id: pageId,
-        deleted: true,
-      },
-      message: 'Page deleted',
-    },
-    { status: 200 }
-  );
+  return success({ id: pageId, deleted: true }, 'Page deleted');
 }
-

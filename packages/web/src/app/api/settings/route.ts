@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getSettingsByCategory, setSetting, type SettingCategory } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
+import { success, errors } from '@/lib/api-response';
 
 const VALID_CATEGORIES: SettingCategory[] = ['ai', 'proxy', 'system', 'cloak'];
 
@@ -19,20 +19,14 @@ const updateSettingSchema = z.object({
 export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   const { searchParams } = new URL(request.url);
   const category = searchParams.get('category') as SettingCategory | null;
 
   if (category && !VALID_CATEGORIES.includes(category)) {
-    return NextResponse.json(
-      { error: { code: 'INVALID_CATEGORY', message: 'Invalid category' } },
-      { status: 400 }
-    );
+    return errors.validation('Invalid category', { category });
   }
 
   const settings: Record<string, Record<string, unknown>> = {};
@@ -45,20 +39,14 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({
-    success: true,
-    data: settings,
-  });
+  return success(settings);
 }
 
 // POST /api/settings - 更新设置
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   try {
@@ -73,23 +61,14 @@ export async function POST(request: Request) {
       data.options
     );
 
-    return NextResponse.json({
-      success: true,
-      message: 'Setting updated',
-    });
+    return success({ ok: true }, 'Setting updated');
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: error.errors } },
-        { status: 400 }
-      );
+      return errors.validation('Invalid input', { errors: error.errors });
     }
 
     console.error('Update setting error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } },
-      { status: 500 }
-    );
+    return errors.internal();
   }
 }
 
@@ -97,10 +76,7 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   try {
@@ -117,22 +93,13 @@ export async function PUT(request: Request) {
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      message: `Updated ${settings.length} settings`,
-    });
+    return success({ updated: settings.length }, `Updated ${settings.length} settings`);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: error.errors } },
-        { status: 400 }
-      );
+      return errors.validation('Invalid input', { errors: error.errors });
     }
 
     console.error('Bulk update settings error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } },
-      { status: 500 }
-    );
+    return errors.internal();
   }
 }

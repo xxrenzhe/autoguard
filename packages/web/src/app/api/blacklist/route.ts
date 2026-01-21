@@ -1,14 +1,7 @@
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { queryAll, queryOne, execute, deleteCache, CacheKeys } from '@autoguard/shared';
-import type {
-  BlacklistIP,
-  BlacklistIPRange,
-  BlacklistUA,
-  BlacklistISP,
-  BlacklistGeo,
-} from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
+import { success, list, errors } from '@/lib/api-response';
 
 // Blacklist types
 type BlacklistType = 'ip' | 'ip_range' | 'ua' | 'isp' | 'geo';
@@ -145,10 +138,7 @@ const bulkAddSchema = z.object({
 export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   try {
@@ -202,49 +192,18 @@ export async function GET(request: Request) {
     const countResult = queryOne<{ count: number }>(countSql, countParams);
     const total = countResult?.count || 0;
 
-    // Get stats for all types
-    const stats = {
-      ip:
-        queryOne<{ count: number }>(
-          'SELECT COUNT(*) as count FROM blacklist_ips WHERE is_active = 1 AND user_id IS NULL'
-        )?.count || 0,
-      ip_range:
-        queryOne<{ count: number }>(
-          'SELECT COUNT(*) as count FROM blacklist_ip_ranges WHERE is_active = 1 AND user_id IS NULL'
-        )?.count || 0,
-      ua:
-        queryOne<{ count: number }>(
-          'SELECT COUNT(*) as count FROM blacklist_uas WHERE is_active = 1 AND user_id IS NULL'
-        )?.count || 0,
-      isp:
-        queryOne<{ count: number }>(
-          'SELECT COUNT(*) as count FROM blacklist_isps WHERE is_active = 1 AND user_id IS NULL'
-        )?.count || 0,
-      geo:
-        queryOne<{ count: number }>(
-          'SELECT COUNT(*) as count FROM blacklist_geos WHERE is_active = 1 AND user_id IS NULL'
-        )?.count || 0,
-    };
-
-    return NextResponse.json({
-      success: true,
-      data: entries,
-      meta: { page: params.page, limit: params.limit, total },
-      stats,
+    return list(entries, {
+      page: params.page,
+      limit: params.limit,
+      total,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: { code: 'VALIDATION_ERROR', message: 'Invalid parameters', details: error.errors } },
-        { status: 400 }
-      );
+      return errors.validation('Invalid parameters', { errors: error.errors });
     }
 
     console.error('Fetch blacklist error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } },
-      { status: 500 }
-    );
+    return errors.internal();
   }
 }
 
@@ -252,10 +211,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   // Only admin can modify global blacklist
@@ -267,10 +223,7 @@ export async function POST(request: Request) {
 
     // Check permission: only admin can write to global blacklist
     if (scope === 'global' && !isAdmin) {
-      return NextResponse.json(
-        { error: { code: 'FORBIDDEN', message: 'Only administrators can modify global blacklist' } },
-        { status: 403 }
-      );
+      return errors.forbidden('Only administrators can modify global blacklist');
     }
 
     // Determine user_id based on scope
@@ -315,12 +268,10 @@ export async function POST(request: Request) {
       // Invalidate cache after bulk add
       await invalidateBlacklistCache(data.type, targetUserId);
 
-      return NextResponse.json({
-        success: true,
-        message: `Added ${added} entries, skipped ${skipped} existing entries`,
-        added,
-        skipped,
-      });
+      return success(
+        { added, skipped },
+        `Added ${added} entries, skipped ${skipped} existing entries`
+      );
     }
 
     // Single entry add
@@ -347,10 +298,7 @@ export async function POST(request: Request) {
 
     if (existing) {
       if (existing.is_active) {
-        return NextResponse.json(
-          { error: { code: 'DUPLICATE', message: 'Entry already exists' } },
-          { status: 400 }
-        );
+        return errors.conflict('Entry already exists');
       }
 
       // Reactivate
@@ -362,11 +310,7 @@ export async function POST(request: Request) {
       // Invalidate cache
       await invalidateBlacklistCache(data.type, targetUserId);
 
-      return NextResponse.json({
-        success: true,
-        message: 'Entry reactivated',
-        id: existing.id,
-      });
+      return success({ id: existing.id }, 'Entry reactivated');
     }
 
     // Insert new entry
@@ -375,24 +319,14 @@ export async function POST(request: Request) {
     // Invalidate cache
     await invalidateBlacklistCache(data.type, targetUserId);
 
-    return NextResponse.json({
-      success: true,
-      message: 'Entry added',
-      id: result.lastInsertRowid,
-    });
+    return success({ id: result.lastInsertRowid }, 'Entry added');
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: error.errors } },
-        { status: 400 }
-      );
+      return errors.validation('Invalid input', { errors: error.errors });
     }
 
     console.error('Add blacklist error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } },
-      { status: 500 }
-    );
+    return errors.internal();
   }
 }
 
@@ -400,10 +334,7 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   try {
@@ -412,18 +343,12 @@ export async function DELETE(request: Request) {
     const id = searchParams.get('id');
 
     if (!type || !id) {
-      return NextResponse.json(
-        { error: { code: 'MISSING_PARAMS', message: 'Missing type or id' } },
-        { status: 400 }
-      );
+      return errors.validation('Missing type or id');
     }
 
     const config = tableConfig[type];
     if (!config) {
-      return NextResponse.json(
-        { error: { code: 'INVALID_TYPE', message: 'Invalid blacklist type' } },
-        { status: 400 }
-      );
+      return errors.validation('Invalid blacklist type');
     }
 
     const entryId = parseInt(id, 10);
@@ -445,16 +370,10 @@ export async function DELETE(request: Request) {
       await invalidateBlacklistCache(type, entry.user_id);
     }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Entry removed',
-    });
+    return success({ id: entryId, deleted: true }, 'Entry removed');
   } catch (error) {
     console.error('Delete blacklist error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } },
-      { status: 500 }
-    );
+    return errors.internal();
   }
 }
 

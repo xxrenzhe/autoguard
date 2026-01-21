@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
+import { success, errors } from '@/lib/api-response';
 
 // ISO 3166-1 alpha-2 country codes with names
 const COUNTRIES: { code: string; name: string; region: string }[] = [
@@ -82,10 +82,7 @@ const COUNTRIES: { code: string; name: string; region: string }[] = [
 export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   try {
@@ -116,18 +113,13 @@ export async function GET(request: Request) {
       grouped[country.region]!.push(country);
     }
 
-    return NextResponse.json({
-      data: {
-        countries: filtered,
-        grouped,
-        regions: [...new Set(COUNTRIES.map((c) => c.region))].sort(),
-      },
+    return success({
+      countries: filtered,
+      grouped,
+      regions: [...new Set(COUNTRIES.map((c) => c.region))].sort(),
     });
   } catch (error) {
     console.error('Countries fetch error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } },
-      { status: 500 }
-    );
+    return errors.internal();
   }
 }

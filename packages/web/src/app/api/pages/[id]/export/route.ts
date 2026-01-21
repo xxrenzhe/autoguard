@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { queryOne } from '@autoguard/shared';
-import type { Page, Offer } from '@autoguard/shared';
+import type { Page } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 import { errors } from '@/lib/api-response';
 import * as fs from 'fs';

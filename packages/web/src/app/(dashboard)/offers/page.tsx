@@ -3,10 +3,17 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import type { Offer } from '@autoguard/shared';
+
+interface OfferRow {
+  id: number;
+  brand_name: string;
+  subdomain: string;
+  status: string;
+  cloak_enabled: boolean;
+}
 
 export default function OffersPage() {
-  const [offers, setOffers] = useState<Offer[]>([]);
+  const [offers, setOffers] = useState<OfferRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -30,22 +37,23 @@ export default function OffersPage() {
     }
   }
 
-  async function toggleCloak(offerId: number, currentState: number) {
+  async function toggleCloak(offerId: number, currentState: boolean) {
     try {
       const response = await fetch(`/api/offers/${offerId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cloak_enabled: currentState === 0 }),
+        body: JSON.stringify({ cloak_enabled: !currentState }),
       });
       const data = await response.json();
-      if (data.success) {
-        setOffers(offers.map((o) =>
-          o.id === offerId ? { ...o, cloak_enabled: currentState === 0 ? 1 : 0 } : o
-        ));
-        toast.success(currentState === 0 ? 'Cloak enabled' : 'Cloak disabled');
-      } else {
+      if (!response.ok) {
         toast.error(data.error?.message || 'Failed to toggle cloak');
+        return;
       }
+
+      setOffers(offers.map((o) =>
+        o.id === offerId ? { ...o, cloak_enabled: !currentState } : o
+      ));
+      toast.success(!currentState ? 'Cloak enabled' : 'Cloak disabled');
     } catch {
       toast.error('Network error');
     }

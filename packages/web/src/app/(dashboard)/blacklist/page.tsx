@@ -100,13 +100,13 @@ export default function BlacklistPage() {
       const response = await fetch(`/api/blacklist?${params}`);
       const data = await response.json();
 
-      if (data.success) {
-        setEntries(data.data);
-        setTotal(data.meta.total);
-        setStats(data.stats);
-      } else {
+      if (!response.ok) {
         toast.error(data.error?.message || 'Failed to fetch blacklist');
+        return;
       }
+
+      setEntries(data.data);
+      setTotal(data.pagination?.total || 0);
     } catch {
       toast.error('Network error');
     } finally {
@@ -114,9 +114,38 @@ export default function BlacklistPage() {
     }
   }, [activeType, page, search]);
 
+  const fetchStats = useCallback(async () => {
+    try {
+      const response = await fetch('/api/blacklist/stats');
+      const data = await response.json();
+
+      if (!response.ok) {
+        toast.error(data.error?.message || 'Failed to fetch blacklist stats');
+        return;
+      }
+
+      const counts = data.data?.counts;
+      if (!counts) return;
+
+      setStats({
+        ip: counts.ip || 0,
+        ip_range: counts.ip_ranges || 0,
+        ua: counts.uas || 0,
+        isp: counts.isps || 0,
+        geo: counts.geos || 0,
+      });
+    } catch {
+      toast.error('Network error');
+    }
+  }, []);
+
   useEffect(() => {
     fetchEntries();
   }, [fetchEntries]);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -137,15 +166,17 @@ export default function BlacklistPage() {
 
       const data = await response.json();
 
-      if (data.success) {
-        toast.success(data.message || 'Entry added');
-        setNewValue('');
-        setNewReason('');
-        setShowAddForm(false);
-        fetchEntries();
-      } else {
+      if (!response.ok) {
         toast.error(data.error?.message || 'Failed to add entry');
+        return;
       }
+
+      toast.success(data.message || 'Entry added');
+      setNewValue('');
+      setNewReason('');
+      setShowAddForm(false);
+      fetchEntries();
+      fetchStats();
     } catch {
       toast.error('Network error');
     } finally {
@@ -181,14 +212,16 @@ export default function BlacklistPage() {
 
       const data = await response.json();
 
-      if (data.success) {
-        toast.success(data.message || `Added ${data.added} entries`);
-        setBulkValues('');
-        setShowBulkAdd(false);
-        fetchEntries();
-      } else {
+      if (!response.ok) {
         toast.error(data.error?.message || 'Failed to add entries');
+        return;
       }
+
+      toast.success(data.message || `Added ${data.data?.added || 0} entries`);
+      setBulkValues('');
+      setShowBulkAdd(false);
+      fetchEntries();
+      fetchStats();
     } catch {
       toast.error('Network error');
     } finally {
@@ -207,12 +240,14 @@ export default function BlacklistPage() {
 
       const data = await response.json();
 
-      if (data.success) {
-        toast.success('Entry removed');
-        fetchEntries();
-      } else {
+      if (!response.ok) {
         toast.error(data.error?.message || 'Failed to remove entry');
+        return;
       }
+
+      toast.success('Entry removed');
+      fetchEntries();
+      fetchStats();
     } catch {
       toast.error('Network error');
     }

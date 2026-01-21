@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { queryAll, queryOne, execute, generateSubdomain, getRedis, CacheKeys } from '@autoguard/shared';
+import { queryAll, queryOne, execute, generateSubdomain, getRedis, CacheKeys, safeJsonParse } from '@autoguard/shared';
 import type { Offer } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 import { success, list, errors } from '@/lib/api-response';
@@ -13,6 +13,23 @@ const createOfferSchema = z.object({
   cloak_enabled: z.boolean().optional(),
 });
 
+const offerListQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+  status: z.enum(['draft', 'active', 'paused']).optional(),
+  search: z.string().trim().min(1).optional(),
+  sort: z.enum(['created_at', 'updated_at', 'brand_name']).default('created_at'),
+  order: z.enum(['asc', 'desc']).default('desc'),
+});
+
+type OfferListRow = Offer & {
+  money_page_count: number;
+  safe_page_count: number;
+  total_visits: number;
+  money_visits: number;
+  safe_visits: number;
+};
+
 // GET /api/offers - 获取 Offer 列表
 export async function GET(request: Request) {
   const user = await getCurrentUser();
@@ -21,34 +38,82 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const page = parseInt(searchParams.get('page') || '1', 10);
-  const limit = parseInt(searchParams.get('limit') || '20', 10);
-  const status = searchParams.get('status');
+  const parsed = offerListQuerySchema.safeParse({
+    page: searchParams.get('page') || 1,
+    limit: searchParams.get('limit') || 20,
+    status: searchParams.get('status') || undefined,
+    search: searchParams.get('search') || undefined,
+    sort: searchParams.get('sort') || 'created_at',
+    order: searchParams.get('order') || 'desc',
+  });
 
+  if (!parsed.success) {
+    return errors.validation('Invalid parameters', { errors: parsed.error.errors });
+  }
+
+  const { page, limit, status, search, sort, order } = parsed.data;
   const offset = (page - 1) * limit;
 
-  let sql = 'SELECT * FROM offers WHERE user_id = ? AND is_deleted = 0';
-  const params: unknown[] = [user.userId];
+  let whereClause = 'WHERE o.user_id = ? AND o.is_deleted = 0';
+  const whereParams: unknown[] = [user.userId];
 
   if (status) {
-    sql += ' AND status = ?';
-    params.push(status);
+    whereClause += ' AND o.status = ?';
+    whereParams.push(status);
   }
 
-  sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-  params.push(limit, offset);
-
-  const offers = queryAll<Offer>(sql, params);
-
-  // 获取总数
-  let countSql = 'SELECT COUNT(*) as count FROM offers WHERE user_id = ? AND is_deleted = 0';
-  const countParams: unknown[] = [user.userId];
-  if (status) {
-    countSql += ' AND status = ?';
-    countParams.push(status);
+  if (search) {
+    whereClause += ' AND o.brand_name LIKE ?';
+    whereParams.push(`%${search}%`);
   }
-  const countResult = queryOne<{ count: number }>(countSql, countParams);
+
+  const rows = queryAll<OfferListRow>(
+    `SELECT
+      o.*,
+      (SELECT COUNT(*) FROM pages p WHERE p.offer_id = o.id AND p.page_type = 'money' AND p.status IN ('generated', 'published')) as money_page_count,
+      (SELECT COUNT(*) FROM pages p WHERE p.offer_id = o.id AND p.page_type = 'safe' AND p.status IN ('generated', 'published')) as safe_page_count,
+      (SELECT COALESCE(SUM(ds.total_visits), 0) FROM daily_stats ds WHERE ds.offer_id = o.id) as total_visits,
+      (SELECT COALESCE(SUM(ds.money_page_visits), 0) FROM daily_stats ds WHERE ds.offer_id = o.id) as money_visits,
+      (SELECT COALESCE(SUM(ds.safe_page_visits), 0) FROM daily_stats ds WHERE ds.offer_id = o.id) as safe_visits
+    FROM offers o
+    ${whereClause}
+    ORDER BY o.${sort} ${order}
+    LIMIT ? OFFSET ?`,
+    [...whereParams, limit, offset]
+  );
+
+  const countResult = queryOne<{ count: number }>(
+    `SELECT COUNT(*) as count FROM offers o ${whereClause}`,
+    whereParams
+  );
   const total = countResult?.count || 0;
+
+  const offers = rows.map((offer) => ({
+    id: offer.id,
+    brand_name: offer.brand_name,
+    brand_url: offer.brand_url,
+    affiliate_link: offer.affiliate_link,
+    scrape_status: offer.scrape_status,
+    status: offer.status,
+    page_count: {
+      money: offer.money_page_count || 0,
+      safe: offer.safe_page_count || 0,
+    },
+    stats: {
+      total_visits: offer.total_visits || 0,
+      money_visits: offer.money_visits || 0,
+      safe_visits: offer.safe_visits || 0,
+    },
+    subdomain: offer.subdomain,
+    custom_domain: offer.custom_domain,
+    custom_domain_status: offer.custom_domain_status,
+    cloak_enabled: offer.cloak_enabled === 1,
+    target_countries: offer.target_countries
+      ? safeJsonParse<string[]>(offer.target_countries, [])
+      : [],
+    created_at: offer.created_at,
+    updated_at: offer.updated_at,
+  }));
 
   return list(offers, { page, limit, total });
 }
@@ -135,6 +200,10 @@ export async function POST(request: Request) {
     return success(
       {
         ...offer,
+        cloak_enabled: Boolean(offer?.cloak_enabled),
+        target_countries: offer?.target_countries
+          ? safeJsonParse<string[]>(offer.target_countries, [])
+          : [],
         access_urls: {
           system: `https://${subdomain}.autoguard.dev`,
           custom: null,

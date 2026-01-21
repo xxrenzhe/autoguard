@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getCurrentUser } from '@/lib/auth';
+import { success, errors } from '@/lib/api-response';
 
 const testSchema = z.object({
   pattern: z.string().min(1, 'Pattern is required'),
@@ -12,10 +12,7 @@ const testSchema = z.object({
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   try {
@@ -27,15 +24,16 @@ export async function POST(request: Request) {
     let matchedText: string | undefined;
 
     switch (data.pattern_type) {
-      case 'exact':
+      case 'exact': {
         matched = data.test_ua === data.pattern;
         if (matched) {
           matchPosition = 0;
           matchedText = data.pattern;
         }
         break;
+      }
 
-      case 'contains':
+      case 'contains': {
         const index = data.test_ua.toLowerCase().indexOf(data.pattern.toLowerCase());
         matched = index !== -1;
         if (matched) {
@@ -43,8 +41,9 @@ export async function POST(request: Request) {
           matchedText = data.test_ua.substring(index, index + data.pattern.length);
         }
         break;
+      }
 
-      case 'regex':
+      case 'regex': {
         try {
           const regex = new RegExp(data.pattern, 'i');
           const match = data.test_ua.match(regex);
@@ -54,36 +53,26 @@ export async function POST(request: Request) {
             matchedText = match[0];
           }
         } catch (err) {
-          return NextResponse.json(
-            { error: { code: 'INVALID_REGEX', message: 'Invalid regex pattern', details: { error: String(err) } } },
-            { status: 400 }
-          );
+          return errors.validation('Invalid regex pattern', { error: String(err) });
         }
         break;
+      }
     }
 
-    return NextResponse.json({
-      data: {
-        matched,
-        match_position: matchPosition,
-        matched_text: matchedText,
-        pattern: data.pattern,
-        pattern_type: data.pattern_type,
-        test_ua: data.test_ua,
-      },
+    return success({
+      matched,
+      match_position: matchPosition,
+      matched_text: matchedText,
+      pattern: data.pattern,
+      pattern_type: data.pattern_type,
+      test_ua: data.test_ua,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: error.errors } },
-        { status: 400 }
-      );
+      return errors.validation('Invalid input', { errors: error.errors });
     }
 
     console.error('UA test error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } },
-      { status: 500 }
-    );
+    return errors.internal();
   }
 }

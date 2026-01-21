@@ -1,5 +1,5 @@
 import { queryAll, queryOne } from '@autoguard/shared';
-import type { Page, Offer } from '@autoguard/shared';
+import type { Page } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 import { list, errors } from '@/lib/api-response';
 

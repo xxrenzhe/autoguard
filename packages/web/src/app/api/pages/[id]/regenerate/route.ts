@@ -1,5 +1,5 @@
 import { queryOne, execute, getRedis, CacheKeys, safeJsonParse } from '@autoguard/shared';
-import type { Offer, Page } from '@autoguard/shared';
+import type { Page } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 import { success, errors } from '@/lib/api-response';
 
@@ -108,4 +108,3 @@ export async function POST(request: Request, { params }: Params) {
     'Page regeneration queued'
   );
 }
-

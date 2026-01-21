@@ -1,10 +1,10 @@
-import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { queryOne, execute } from '@autoguard/shared';
 import type { User } from '@autoguard/shared';
 import { createToken, setAuthCookie } from '@/lib/auth';
 import { withRateLimit, defaultRateLimits, rateLimitExceededResponse } from '@/lib/rate-limit';
+import { success, errors } from '@/lib/api-response';
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -35,19 +35,13 @@ export async function POST(request: Request) {
     );
 
     if (!user) {
-      return NextResponse.json(
-        { error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' } },
-        { status: 401 }
-      );
+      return errors.unauthorized('Invalid email or password');
     }
 
     // 验证密码
     const isValid = await bcrypt.compare(password, user.password_hash);
     if (!isValid) {
-      return NextResponse.json(
-        { error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' } },
-        { status: 401 }
-      );
+      return errors.unauthorized('Invalid email or password');
     }
 
     // 更新最后登录时间
@@ -57,29 +51,19 @@ export async function POST(request: Request) {
 
     // 创建 JWT Token
     const { password_hash, ...userWithoutPassword } = user;
+    void password_hash;
     const token = await createToken(userWithoutPassword);
 
     // 设置 Cookie
     await setAuthCookie(token);
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        user: userWithoutPassword,
-      },
-    });
+    return success({ user: userWithoutPassword });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: error.errors } },
-        { status: 400 }
-      );
+      return errors.validation('Invalid input', { errors: error.errors });
     }
 
     console.error('Login error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } },
-      { status: 500 }
-    );
+    return errors.internal();
   }
 }

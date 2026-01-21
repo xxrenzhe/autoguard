@@ -1,9 +1,9 @@
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { queryOne } from '@autoguard/shared';
+import { queryOne, safeJsonParse } from '@autoguard/shared';
 import type { Offer } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 import { makeDecision, initEngine, getDecisionReason } from '@autoguard/cloak';
+import { success, errors } from '@/lib/api-response';
 
 // Test cloak decision request schema
 const testRequestSchema = z.object({
@@ -22,14 +22,27 @@ const testRequestSchema = z.object({
   target_countries: z.array(z.string()).optional(),
 });
 
-// POST /api/cloak/test - Test cloak decision
+const testQuerySchema = z.object({
+  offer_id: z.coerce.number().int().positive().optional(),
+  subdomain: z.string().optional(),
+  ip: z.string().ip().optional(),
+  ua: z.string().optional(),
+});
+
+function getClientIpFromHeaders(headers: Headers): string {
+  return (
+    headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    headers.get('cf-connecting-ip') ||
+    headers.get('x-real-ip') ||
+    '8.8.8.8'
+  );
+}
+
+// POST /api/cloak/test - Test cloak decision (JSON body)
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   try {
@@ -52,10 +65,7 @@ export async function POST(request: Request) {
     }
 
     if (!offer) {
-      return NextResponse.json(
-        { error: { code: 'NOT_FOUND', message: 'Offer not found or access denied' } },
-        { status: 404 }
-      );
+      return errors.notFound('Offer not found');
     }
 
     // Initialize engine if needed
@@ -94,137 +104,106 @@ export async function POST(request: Request) {
     );
 
     // Build response
-    return NextResponse.json({
-      success: true,
-      data: {
-        // Decision result
-        decision: decision.decision,
-        variant: decision.decision === 'money' ? 'a' : 'b',
-        score: decision.score,
-        reason: getDecisionReason(decision),
-
-        // Detailed breakdown
-        blockedAt: decision.blockedAt || null,
-        processingTime: decision.processingTime,
-
-        // Detection layer details
-        details: {
-          l1: decision.details.l1 || null,
-          l2: decision.details.l2 || null,
-          l3: decision.details.l3 || null,
-          l4: decision.details.l4 || null,
-          l5: decision.details.l5 || null,
-        },
-
-        // Test parameters used
-        testParams: {
-          ip: data.ip,
-          user_agent: data.user_agent,
-          referer: data.referer,
-          url: data.url,
-          cloak_enabled: data.cloak_enabled ?? (offer.cloak_enabled === 1),
-          target_countries: targetCountries,
-        },
-
-        // Offer info
-        offer: {
-          id: offer.id,
-          brand_name: offer.brand_name,
-          subdomain: offer.subdomain,
-          status: offer.status,
-        },
-
-        // Page that would be shown
-        resultPage: {
-          type: decision.decision === 'money' ? 'Money Page' : 'Safe Page',
-          path: `/internal/pages/${offer.subdomain}/${decision.decision === 'money' ? 'a' : 'b'}/index.html`,
-        },
+    return success({
+      decision: decision.decision,
+      score: decision.score,
+      decision_reason: getDecisionReason(decision),
+      blocked_at_layer: decision.blockedAt || null,
+      processing_time_ms: decision.processingTime,
+      details: decision.details,
+      test_params: {
+        ip: data.ip,
+        ua: data.user_agent,
+        referer: data.referer,
+        url: data.url,
+        cloak_enabled: data.cloak_enabled ?? (offer.cloak_enabled === 1),
+        target_countries: targetCountries,
+      },
+      offer: {
+        id: offer.id,
+        brand_name: offer.brand_name,
+        subdomain: offer.subdomain,
+        status: offer.status,
       },
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: error.errors } },
-        { status: 400 }
-      );
+      return errors.validation('Invalid input', { errors: error.errors });
     }
 
     console.error('Cloak test error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } },
-      { status: 500 }
-    );
+    return errors.internal();
   }
 }
 
-// GET /api/cloak/test - Get test info and available options
-export async function GET() {
+// GET /api/cloak/test - Test cloak decision (query params, SystemDesign2-compatible)
+export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
-  return NextResponse.json({
-    success: true,
-    data: {
-      description: 'Test cloak decision for an offer with custom visitor parameters',
-      method: 'POST',
-      parameters: {
-        offer_id: {
-          type: 'number',
-          required: false,
-          description: 'Offer ID (either offer_id or subdomain required)',
-        },
-        subdomain: {
-          type: 'string',
-          required: false,
-          description: 'Offer subdomain (either offer_id or subdomain required)',
-        },
-        ip: {
-          type: 'string',
-          required: false,
-          default: '8.8.8.8',
-          description: 'IP address to test',
-        },
-        user_agent: {
-          type: 'string',
-          required: false,
-          default: 'Mozilla/5.0...',
-          description: 'User-Agent string to test',
-        },
-        referer: {
-          type: 'string',
-          required: false,
-          default: '',
-          description: 'Referer header to test',
-        },
-        url: {
-          type: 'string',
-          required: false,
-          default: '/',
-          description: 'Request URL to test',
-        },
-        cloak_enabled: {
-          type: 'boolean',
-          required: false,
-          description: 'Override cloak enabled setting',
-        },
-        target_countries: {
-          type: 'string[]',
-          required: false,
-          description: 'Override target countries (ISO codes)',
-        },
-      },
-      example: {
-        offer_id: 1,
-        ip: '203.0.113.50',
-        user_agent: 'Googlebot/2.1 (+http://www.google.com/bot.html)',
-        cloak_enabled: true,
-        target_countries: ['US', 'CA', 'GB'],
-      },
+  const { searchParams } = new URL(request.url);
+  let parsed: z.infer<typeof testQuerySchema>;
+  try {
+    parsed = testQuerySchema.parse({
+      offer_id: searchParams.get('offer_id'),
+      subdomain: searchParams.get('subdomain'),
+      ip: searchParams.get('ip'),
+      ua: searchParams.get('ua'),
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return errors.validation('Invalid parameters', { errors: error.errors });
+    }
+    return errors.validation('Invalid parameters');
+  }
+
+  if (!parsed.offer_id && !parsed.subdomain) {
+    return errors.validation('offer_id or subdomain is required');
+  }
+
+  const ip = parsed.ip || getClientIpFromHeaders(request.headers);
+  const userAgent = parsed.ua || request.headers.get('user-agent') || '';
+
+  const offer = parsed.offer_id
+    ? queryOne<Offer>(
+        'SELECT * FROM offers WHERE id = ? AND user_id = ? AND is_deleted = 0',
+        [parsed.offer_id, user.userId]
+      )
+    : queryOne<Offer>(
+        'SELECT * FROM offers WHERE subdomain = ? AND user_id = ? AND is_deleted = 0',
+        [parsed.subdomain, user.userId]
+      );
+
+  if (!offer) {
+    return errors.notFound('Offer not found');
+  }
+
+  await initEngine();
+
+  const decision = await makeDecision(
+    {
+      ip,
+      userAgent,
+      referer: request.headers.get('referer') || '',
+      url: searchParams.get('url') || '/',
+      host: `${offer.subdomain}.autoguard.dev`,
     },
+    offer.id,
+    offer.user_id,
+    {
+      targetCountries: offer.target_countries
+        ? safeJsonParse<string[]>(offer.target_countries, [])
+        : [],
+      cloakEnabled: offer.cloak_enabled === 1,
+    }
+  );
+
+  return success({
+    decision: decision.decision,
+    score: decision.score,
+    details: decision.details,
+    processing_time_ms: decision.processingTime,
   });
 }

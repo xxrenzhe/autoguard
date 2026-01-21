@@ -3,11 +3,12 @@
  * 管理员用户管理接口
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { query, queryOne, execute, hashPassword } from '@autoguard/shared';
-import type { User, UserWithoutPassword } from '@autoguard/shared';
+import type { UserWithoutPassword } from '@autoguard/shared';
 import { z } from 'zod';
+import { list, success, errors } from '@/lib/api-response';
 
 // 创建用户请求验证
 const CreateUserSchema = z.object({
@@ -18,13 +19,6 @@ const CreateUserSchema = z.object({
 });
 
 // 更新用户请求验证
-const UpdateUserSchema = z.object({
-  display_name: z.string().optional(),
-  role: z.enum(['admin', 'user']).optional(),
-  status: z.enum(['active', 'suspended']).optional(),
-  password: z.string().min(8).optional(),
-});
-
 /**
  * GET /api/admin/users - 获取用户列表
  */
@@ -32,10 +26,7 @@ export async function GET(request: NextRequest) {
   try {
     const session = await getSession();
     if (!session || session.role !== 'admin') {
-      return NextResponse.json(
-        { success: false, error: { code: 'UNAUTHORIZED', message: '需要管理员权限' } },
-        { status: 403 }
-      );
+      return errors.forbidden('需要管理员权限');
     }
 
     const { searchParams } = new URL(request.url);
@@ -68,7 +59,7 @@ export async function GET(request: NextRequest) {
     const total = countResult?.count || 0;
 
     // 获取用户列表（不包含密码）
-    const users = query<User>(
+    const users = query<UserWithoutPassword>(
       `SELECT id, email, display_name, role, status, last_login_at, created_at, updated_at
        FROM users ${whereClause}
        ORDER BY created_at DESC
@@ -76,25 +67,10 @@ export async function GET(request: NextRequest) {
       [...params, limit, offset]
     );
 
-    // 移除密码哈希
-    const safeUsers: UserWithoutPassword[] = users.map(({ password_hash, ...user }) => user);
-
-    return NextResponse.json({
-      success: true,
-      data: safeUsers,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    });
+    return list(users, { page, limit, total });
   } catch (error) {
     console.error('Get users error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: '获取用户列表失败' } },
-      { status: 500 }
-    );
+    return errors.internal('获取用户列表失败');
   }
 }
 
@@ -105,27 +81,14 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getSession();
     if (!session || session.role !== 'admin') {
-      return NextResponse.json(
-        { success: false, error: { code: 'UNAUTHORIZED', message: '需要管理员权限' } },
-        { status: 403 }
-      );
+      return errors.forbidden('需要管理员权限');
     }
 
     const body = await request.json();
     const parsed = CreateUserSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: '输入验证失败',
-            details: parsed.error.errors,
-          },
-        },
-        { status: 400 }
-      );
+      return errors.validation('输入验证失败', { errors: parsed.error.errors });
     }
 
     const { email, password, display_name, role } = parsed.data;
@@ -137,10 +100,7 @@ export async function POST(request: NextRequest) {
     );
 
     if (existingUser) {
-      return NextResponse.json(
-        { success: false, error: { code: 'EMAIL_EXISTS', message: '该邮箱已被注册' } },
-        { status: 400 }
-      );
+      return errors.conflict('该邮箱已被注册');
     }
 
     // 创建用户
@@ -154,21 +114,15 @@ export async function POST(request: NextRequest) {
     const userId = result.lastInsertRowid;
 
     // 获取创建的用户
-    const newUser = queryOne<User>(
+    const newUser = queryOne<UserWithoutPassword>(
       `SELECT id, email, display_name, role, status, last_login_at, created_at, updated_at
        FROM users WHERE id = ?`,
       [userId]
     );
 
-    return NextResponse.json({
-      success: true,
-      data: newUser,
-    });
+    return success(newUser);
   } catch (error) {
     console.error('Create user error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: '创建用户失败' } },
-      { status: 500 }
-    );
+    return errors.internal('创建用户失败');
   }
 }

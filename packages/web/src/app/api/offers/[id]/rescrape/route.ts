@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
 import { queryOne, execute, getRedis, CacheKeys } from '@autoguard/shared';
 import type { Offer, Page } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
+import { success, errors } from '@/lib/api-response';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -9,10 +9,7 @@ type Params = { params: Promise<{ id: string }> };
 export async function POST(request: Request, { params }: Params) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   const { id } = await params;
@@ -25,18 +22,12 @@ export async function POST(request: Request, { params }: Params) {
   );
 
   if (!offer) {
-    return NextResponse.json(
-      { error: { code: 'NOT_FOUND', message: 'Offer not found' } },
-      { status: 404 }
-    );
+    return errors.notFound('Offer not found');
   }
 
   // Check not already scraping
   if (offer.scrape_status === 'scraping') {
-    return NextResponse.json(
-      { error: { code: 'ALREADY_IN_PROGRESS', message: 'Scraping is already in progress' } },
-      { status: 400 }
-    );
+    return errors.validation('Scraping is already in progress');
   }
 
   try {
@@ -80,20 +71,16 @@ export async function POST(request: Request, { params }: Params) {
       ['scraping', offerId]
     );
 
-    return NextResponse.json({
-      success: true,
-      message: 'Scrape job queued successfully',
-      data: {
+    return success(
+      {
         offer_id: offerId,
         page_id: moneyPage!.id,
         scrape_status: 'scraping',
       },
-    });
+      'Scrape job queued successfully'
+    );
   } catch (error) {
     console.error('Rescrape error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Failed to queue scrape job' } },
-      { status: 500 }
-    );
+    return errors.internal('Failed to queue scrape job');
   }
 }

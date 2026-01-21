@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { queryAll, queryOne } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
+import { success, errors } from '@/lib/api-response';
 
 interface DailyStat {
   date: string;
@@ -30,10 +30,7 @@ const queryParamsSchema = z.object({
 export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   try {
@@ -80,10 +77,7 @@ export async function GET(request: Request) {
       );
 
       if (!offer) {
-        return NextResponse.json(
-          { error: { code: 'NOT_FOUND', message: 'Offer not found' } },
-          { status: 404 }
-        );
+        return errors.notFound('Offer not found');
       }
 
       whereClause += ' AND ds.offer_id = ?';
@@ -205,32 +199,23 @@ export async function GET(request: Request) {
       [startDate, endDate, user.userId]
     );
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        overall,
-        today: todayStats,
-        daily: dailyStats,
-        byOffer,
-        topCountries,
-        period: {
-          start: startDate,
-          end: endDate,
-        },
+    return success({
+      overall,
+      today: todayStats,
+      daily: dailyStats,
+      byOffer,
+      topCountries,
+      period: {
+        start: startDate,
+        end: endDate,
       },
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: { code: 'VALIDATION_ERROR', message: 'Invalid parameters', details: error.errors } },
-        { status: 400 }
-      );
+      return errors.validation('Invalid parameters', { errors: error.errors });
     }
 
     console.error('Fetch stats error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } },
-      { status: 500 }
-    );
+    return errors.internal();
   }
 }

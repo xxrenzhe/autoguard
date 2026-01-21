@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { queryAll, queryOne, execute } from '@autoguard/shared';
+import { success, errors } from '@/lib/api-response';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -13,14 +14,14 @@ export async function GET(request: NextRequest, context: RouteParams) {
   try {
     const session = await getSession();
     if (!session || session.role !== 'admin') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return errors.forbidden('需要管理员权限');
     }
 
     const { id } = await context.params;
     const promptId = parseInt(id, 10);
 
     if (isNaN(promptId)) {
-      return NextResponse.json({ error: 'Invalid prompt ID' }, { status: 400 });
+      return errors.validation('Invalid prompt ID');
     }
 
     // 检查 prompt 是否存在
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest, context: RouteParams) {
     );
 
     if (!prompt) {
-      return NextResponse.json({ error: 'Prompt not found' }, { status: 404 });
+      return errors.notFound('Prompt not found');
     }
 
     const versions = queryAll<{
@@ -49,8 +50,8 @@ export async function GET(request: NextRequest, context: RouteParams) {
       [promptId]
     );
 
-    return NextResponse.json({
-      data: versions.map((v) => ({
+    return success(
+      versions.map((v) => ({
         id: v.id,
         prompt_id: v.prompt_id,
         version: v.version,
@@ -59,11 +60,11 @@ export async function GET(request: NextRequest, context: RouteParams) {
         status: v.is_active ? 'active' : 'draft',
         created_at: v.created_at,
         activated_at: v.activated_at,
-      })),
-    });
+      }))
+    );
   } catch (error) {
     console.error('Failed to get versions:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return errors.internal('Internal server error');
   }
 }
 
@@ -74,24 +75,21 @@ export async function POST(request: NextRequest, context: RouteParams) {
   try {
     const session = await getSession();
     if (!session || session.role !== 'admin') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return errors.forbidden('需要管理员权限');
     }
 
     const { id } = await context.params;
     const promptId = parseInt(id, 10);
 
     if (isNaN(promptId)) {
-      return NextResponse.json({ error: 'Invalid prompt ID' }, { status: 400 });
+      return errors.validation('Invalid prompt ID');
     }
 
     const body = await request.json();
     const { content, variables } = body;
 
     if (!content) {
-      return NextResponse.json(
-        { error: 'Content is required' },
-        { status: 400 }
-      );
+      return errors.validation('Content is required');
     }
 
     // 检查 prompt 是否存在
@@ -101,7 +99,7 @@ export async function POST(request: NextRequest, context: RouteParams) {
     );
 
     if (!prompt) {
-      return NextResponse.json({ error: 'Prompt not found' }, { status: 404 });
+      return errors.notFound('Prompt not found');
     }
 
     // 获取当前最大版本号
@@ -130,18 +128,13 @@ export async function POST(request: NextRequest, context: RouteParams) {
       [promptId, newVersionNumber]
     );
 
-    return NextResponse.json({
-      data: {
-        id: newVersion?.id,
-        version: `v${newVersionNumber}`,
-        status: 'draft',
-      },
+    return success({
+      id: newVersion?.id,
+      version: `v${newVersionNumber}`,
+      status: 'draft',
     });
   } catch (error) {
     console.error('Failed to create version:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return errors.internal('Internal server error');
   }
 }

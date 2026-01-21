@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { queryOne, execute, getRedis, CacheKeys } from '@autoguard/shared';
 import type { Offer, Page } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
+import { success, errors } from '@/lib/api-response';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -18,10 +18,7 @@ const generatePageSchema = z.object({
 export async function POST(request: Request, { params }: Params) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
-      { status: 401 }
-    );
+    return errors.unauthorized();
   }
 
   const { id } = await params;
@@ -34,10 +31,7 @@ export async function POST(request: Request, { params }: Params) {
   );
 
   if (!offer) {
-    return NextResponse.json(
-      { error: { code: 'NOT_FOUND', message: 'Offer not found' } },
-      { status: 404 }
-    );
+    return errors.notFound('Offer not found');
   }
 
   try {
@@ -48,27 +42,11 @@ export async function POST(request: Request, { params }: Params) {
     // - Money Page (A): scrape only
     // - Safe Page (B): AI generate only
     if (data.variant === 'a' && data.action !== 'scrape') {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Money Page (variant a) only supports scrape generation',
-          },
-        },
-        { status: 400 }
-      );
+      return errors.validation('Money Page (variant a) only supports scrape generation');
     }
 
     if (data.variant === 'b' && data.action !== 'ai_generate') {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Safe Page (variant b) only supports AI generation',
-          },
-        },
-        { status: 400 }
-      );
+      return errors.validation('Safe Page (variant b) only supports AI generation');
     }
 
     // 确定源 URL
@@ -162,26 +140,21 @@ export async function POST(request: Request, { params }: Params) {
 
     await redis.lpush(CacheKeys.queue.pageGeneration, JSON.stringify(job));
 
-    return NextResponse.json({
-      success: true,
-      data: {
+    return success(
+      {
         page_id: page!.id,
         status: 'generating',
-        message: `Page generation started. Variant: ${data.variant === 'a' ? 'Money' : 'Safe'}, Action: ${data.action}`,
+        variant: data.variant,
+        action: data.action,
       },
-    });
+      `Page generation started. Variant: ${data.variant === 'a' ? 'Money' : 'Safe'}, Action: ${data.action}`
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: error.errors } },
-        { status: 400 }
-      );
+      return errors.validation('Invalid input', { errors: error.errors });
     }
 
     console.error('Generate page error:', error);
-    return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } },
-      { status: 500 }
-    );
+    return errors.internal();
   }
 }
