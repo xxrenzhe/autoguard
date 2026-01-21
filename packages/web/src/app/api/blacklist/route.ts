@@ -11,6 +11,7 @@ import {
 } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 import { success, list, errors } from '@/lib/api-response';
+import { withSnakeCaseAliases } from '@/lib/key-case';
 
 // Blacklist types
 type BlacklistType = 'ip' | 'ip_range' | 'ua' | 'isp' | 'geo';
@@ -234,7 +235,7 @@ export async function POST(request: Request) {
   const isAdmin = user.role === 'admin';
 
   try {
-    const body = await request.json();
+    const body = withSnakeCaseAliases(await request.json()) as any;
     const scope = body.scope || 'user'; // Default to user scope
 
     // Check permission: only admin can write to global blacklist

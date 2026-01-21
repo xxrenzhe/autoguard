@@ -3,6 +3,7 @@ import { queryOne, execute, getRedis, CacheKeys } from '@autoguard/shared';
 import type { Offer, Page } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 import { success, errors } from '@/lib/api-response';
+import { withSnakeCaseAliases } from '@/lib/key-case';
 
 const generateSchema = z
   .object({
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
 
   let payload: unknown;
   try {
-    payload = await request.json();
+    payload = withSnakeCaseAliases(await request.json());
   } catch {
     return errors.validation('Invalid JSON body');
   }
@@ -172,4 +173,3 @@ export async function POST(request: Request) {
     '页面生成中，预计需要 1-2 分钟'
   );
 }
-

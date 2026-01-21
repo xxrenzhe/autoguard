@@ -3,6 +3,7 @@ import { queryOne, execute, getRedis, CacheKeys } from '@autoguard/shared';
 import type { Offer, Page } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 import { success, errors } from '@/lib/api-response';
+import { withSnakeCaseAliases } from '@/lib/key-case';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -35,7 +36,7 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   try {
-    const body = await request.json();
+    const body = withSnakeCaseAliases(await request.json());
     const data = generatePageSchema.parse(body);
 
     // Enforce generation methods per design:

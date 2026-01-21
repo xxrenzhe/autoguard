@@ -25,11 +25,11 @@ import {
 interface User {
   id: number;
   email: string;
-  display_name: string | null;
+  displayName: string | null;
   role: 'admin' | 'user';
   status: 'active' | 'suspended';
-  last_login_at: string | null;
-  created_at: string;
+  lastLoginAt: string | null;
+  createdAt: string;
 }
 
 interface UsersResponse {
@@ -38,7 +38,7 @@ interface UsersResponse {
     page: number;
     limit: number;
     total: number;
-    total_pages: number;
+    totalPages: number;
   };
 }
 
@@ -56,7 +56,7 @@ export default function AdminUsersPage() {
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    display_name: '',
+    displayName: '',
     role: 'user' as 'admin' | 'user',
   });
 
@@ -83,7 +83,7 @@ export default function AdminUsersPage() {
         page: parsed.pagination.page,
         limit: parsed.pagination.limit,
         total: parsed.pagination.total,
-        totalPages: parsed.pagination.total_pages,
+        totalPages: parsed.pagination.totalPages,
       });
     } catch {
       toast.error('网络错误');
@@ -117,7 +117,7 @@ export default function AdminUsersPage() {
 
       toast.success('用户创建成功');
       setCreateDialogOpen(false);
-      setFormData({ email: '', password: '', display_name: '', role: 'user' });
+      setFormData({ email: '', password: '', displayName: '', role: 'user' });
       fetchUsers();
     } catch {
       toast.error('网络错误');
@@ -132,7 +132,7 @@ export default function AdminUsersPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          display_name: formData.display_name,
+          displayName: formData.displayName,
           role: formData.role,
         }),
       });
@@ -203,7 +203,7 @@ export default function AdminUsersPage() {
     setFormData({
       email: user.email,
       password: '',
-      display_name: user.display_name || '',
+      displayName: user.displayName || '',
       role: user.role,
     });
     setEditDialogOpen(true);
@@ -272,7 +272,7 @@ export default function AdminUsersPage() {
                 >
                   <span className="truncate">{user.email}</span>
                   <span className="truncate text-muted-foreground">
-                    {user.display_name || '-'}
+                    {user.displayName || '-'}
                   </span>
                   <span>
                     <Badge variant={user.role === 'admin' ? 'default' : 'secondary'}>
@@ -285,8 +285,8 @@ export default function AdminUsersPage() {
                     </Badge>
                   </span>
                   <span className="text-sm text-muted-foreground">
-                    {user.last_login_at
-                      ? new Date(user.last_login_at).toLocaleString('zh-CN')
+                    {user.lastLoginAt
+                      ? new Date(user.lastLoginAt).toLocaleString('zh-CN')
                       : '从未登录'}
                   </span>
                   <div className="flex items-center gap-2">
@@ -373,9 +373,9 @@ export default function AdminUsersPage() {
             <div className="space-y-2">
               <Label>昵称（可选）</Label>
               <Input
-                value={formData.display_name}
+                value={formData.displayName}
                 onChange={(e) =>
-                  setFormData({ ...formData, display_name: e.target.value })
+                  setFormData({ ...formData, displayName: e.target.value })
                 }
                 placeholder="显示名称"
               />
@@ -419,9 +419,9 @@ export default function AdminUsersPage() {
             <div className="space-y-2">
               <Label>昵称</Label>
               <Input
-                value={formData.display_name}
+                value={formData.displayName}
                 onChange={(e) =>
-                  setFormData({ ...formData, display_name: e.target.value })
+                  setFormData({ ...formData, displayName: e.target.value })
                 }
                 placeholder="显示名称"
               />

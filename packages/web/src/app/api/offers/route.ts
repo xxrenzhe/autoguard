@@ -3,6 +3,7 @@ import { queryAll, queryOne, execute, generateSubdomain, getRedis, CacheKeys, sa
 import type { Offer } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 import { success, list, errors } from '@/lib/api-response';
+import { withSnakeCaseAliases } from '@/lib/key-case';
 
 // 创建 Offer 的验证 schema
 const createOfferSchema = z.object({
@@ -126,7 +127,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const body = await request.json();
+    const body = withSnakeCaseAliases(await request.json());
     const data = createOfferSchema.parse(body);
 
     // 生成唯一子域名

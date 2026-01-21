@@ -10,7 +10,10 @@ import { CacheKeys } from '@autoguard/shared';
 // 配置
 const BATCH_SIZE = parseInt(process.env.LOG_WRITER_BATCH_SIZE || '100', 10);
 const FLUSH_INTERVAL_MS = parseInt(process.env.LOG_WRITER_FLUSH_INTERVAL || '1000', 10);
-const DB_PATH = process.env.SQLITE_DB_PATH || './data/db/autoguard.db';
+const DB_PATH =
+  process.env.SQLITE_DB_PATH ||
+  process.env.DATABASE_PATH ||
+  './data/db/autoguard.db';
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 
 // 初始化
@@ -90,41 +93,82 @@ async function processQueue(): Promise<void> {
 
   // brpop 超时时间（秒），0 表示无限等待，这里设置为合理的超时
   const BRPOP_TIMEOUT = Math.ceil(FLUSH_INTERVAL_MS / 1000) || 1;
+  const pendingKey = CacheKeys.queue.cloakLogs;
+  const processingKey = `${pendingKey}:processing`;
+
+  // 进程重启后，将遗留在 processing 的日志放回 pending
+  try {
+    let moved = 0;
+    while (true) {
+      const item = await redis.rpoplpush(processingKey, pendingKey);
+      if (!item) break;
+      moved++;
+    }
+    if (moved > 0) {
+      console.warn(`[Log Writer] Re-queued ${moved} stuck logs from processing list`);
+    }
+  } catch (error) {
+    console.error('[Log Writer] Failed to re-queue stuck logs:', error);
+  }
 
   while (true) {
     try {
       const logs: CloakLogEntry[] = [];
+      const rawLogs: string[] = [];
 
-      // 使用 brpop 阻塞等待第一条日志
-      const firstResult = await redis.brpop(CacheKeys.queue.cloakLogs, BRPOP_TIMEOUT);
+      // 使用 brpoplpush 阻塞等待第一条日志，并放入 processing 列表避免丢失
+      const firstRaw = await redis.brpoplpush(pendingKey, processingKey, BRPOP_TIMEOUT);
 
-      if (firstResult) {
-        // brpop 返回 [key, value]
+      if (firstRaw) {
         try {
-          const log = JSON.parse(firstResult[1]) as CloakLogEntry;
+          const log = JSON.parse(firstRaw) as CloakLogEntry;
           logs.push(log);
+          rawLogs.push(firstRaw);
         } catch (parseError) {
           console.error('Failed to parse log entry:', parseError);
+          await redis.lrem(processingKey, 1, firstRaw);
         }
 
-        // 有数据后，继续用 rpop 批量获取剩余的（非阻塞）
+        // 有数据后，继续用 rpoplpush 批量获取剩余的（非阻塞）
         for (let i = 1; i < BATCH_SIZE; i++) {
-          const result = await redis.rpop(CacheKeys.queue.cloakLogs);
-          if (!result) break;
+          const raw = await redis.rpoplpush(pendingKey, processingKey);
+          if (!raw) break;
 
           try {
-            const log = JSON.parse(result) as CloakLogEntry;
+            const log = JSON.parse(raw) as CloakLogEntry;
             logs.push(log);
+            rawLogs.push(raw);
           } catch (parseError) {
             console.error('Failed to parse log entry:', parseError);
+            await redis.lrem(processingKey, 1, raw);
           }
         }
       }
 
       // 批量写入数据库
       if (logs.length > 0) {
-        insertMany(logs);
-        totalWritten += logs.length;
+        try {
+          insertMany(logs);
+          totalWritten += logs.length;
+
+          // 写入成功后，确认（ack）并从 processing 移除
+          const pipeline = redis.pipeline();
+          for (const raw of rawLogs) {
+            pipeline.lrem(processingKey, 1, raw);
+          }
+          await pipeline.exec();
+        } catch (error) {
+          // 写入失败：将已取出的 raw 日志放回 pending，避免丢失
+          console.error('Log write error (will re-queue):', error);
+          const pipeline = redis.pipeline();
+          for (const raw of rawLogs) {
+            pipeline.lrem(processingKey, 1, raw);
+            pipeline.lpush(pendingKey, raw);
+          }
+          await pipeline.exec();
+          await sleep(1000);
+          continue;
+        }
 
         // 每 10 秒报告一次统计
         const now = Date.now();

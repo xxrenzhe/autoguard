@@ -6,20 +6,20 @@ import { toast } from 'sonner';
 
 interface PageData {
   id: number;
-  offer_id: number;
+  offerId: number;
   variant: 'a' | 'b';
-  source_type: string;
-  source_url: string | null;
-  local_path: string | null;
+  sourceType: string;
+  sourceUrl: string | null;
+  localPath: string | null;
   status: string;
   meta: Record<string, unknown> | null;
-  created_at: string;
-  updated_at: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface OfferInfo {
   id: number;
-  brand_name: string;
+  brandName: string;
   subdomain: string;
 }
 
@@ -91,8 +91,8 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
         body: JSON.stringify({
           variant: modalVariant,
           action,
-          source_url: action === 'scrape' ? (modalUrl || undefined) : undefined,
-          safe_page_type: action === 'ai_generate' ? modalSafePageType : undefined,
+          sourceUrl: action === 'scrape' ? (modalUrl || undefined) : undefined,
+          safePageType: action === 'ai_generate' ? modalSafePageType : undefined,
           competitors: action === 'ai_generate' && competitors.length > 0 ? competitors : undefined,
         }),
       });
@@ -147,7 +147,7 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
           ← Back
         </Link>
         <h1 className="text-2xl font-bold text-gray-900">
-          Page Management: {offer?.brand_name}
+          Page Management: {offer?.brandName}
         </h1>
       </div>
 
@@ -186,19 +186,19 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
 
                 <div>
                   <span className="text-xs text-gray-500 block">Source Type</span>
-                  <span className="text-sm text-gray-900">{moneyPage.source_type}</span>
+                  <span className="text-sm text-gray-900">{moneyPage.sourceType}</span>
                 </div>
 
-                {moneyPage.source_url && (
+                {moneyPage.sourceUrl && (
                   <div>
                     <span className="text-xs text-gray-500 block">Source URL</span>
                     <a
-                      href={moneyPage.source_url}
+                      href={moneyPage.sourceUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-sm text-blue-600 hover:text-blue-700 break-all"
                     >
-                      {moneyPage.source_url}
+                      {moneyPage.sourceUrl}
                     </a>
                   </div>
                 )}
@@ -206,7 +206,7 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
                 <div>
                   <span className="text-xs text-gray-500 block">Last Updated</span>
                   <span className="text-sm text-gray-900">
-                    {new Date(moneyPage.updated_at).toLocaleString()}
+                    {new Date(moneyPage.updatedAt).toLocaleString()}
                   </span>
                 </div>
 
@@ -279,19 +279,19 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
 
                 <div>
                   <span className="text-xs text-gray-500 block">Source Type</span>
-                  <span className="text-sm text-gray-900">{safePage.source_type}</span>
+                  <span className="text-sm text-gray-900">{safePage.sourceType}</span>
                 </div>
 
-                {safePage.source_url && (
+                {safePage.sourceUrl && (
                   <div>
                     <span className="text-xs text-gray-500 block">Source URL</span>
                     <a
-                      href={safePage.source_url}
+                      href={safePage.sourceUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-sm text-blue-600 hover:text-blue-700 break-all"
                     >
-                      {safePage.source_url}
+                      {safePage.sourceUrl}
                     </a>
                   </div>
                 )}
@@ -299,7 +299,7 @@ export default function OfferPagesPage({ params }: { params: Promise<{ id: strin
                 <div>
                   <span className="text-xs text-gray-500 block">Last Updated</span>
                   <span className="text-sm text-gray-900">
-                    {new Date(safePage.updated_at).toLocaleString()}
+                    {new Date(safePage.updatedAt).toLocaleString()}
                   </span>
                 </div>
 

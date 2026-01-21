@@ -9,6 +9,7 @@ import { query, queryOne, execute, hashPassword } from '@autoguard/shared';
 import type { UserWithoutPassword } from '@autoguard/shared';
 import { z } from 'zod';
 import { list, success, errors } from '@/lib/api-response';
+import { withSnakeCaseAliases } from '@/lib/key-case';
 
 // 创建用户请求验证
 const CreateUserSchema = z.object({
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest) {
       return errors.forbidden('需要管理员权限');
     }
 
-    const body = await request.json();
+    const body = withSnakeCaseAliases(await request.json());
     const parsed = CreateUserSchema.safeParse(body);
 
     if (!parsed.success) {

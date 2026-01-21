@@ -6,23 +6,23 @@ import { toast } from 'sonner';
 
 interface OfferStats {
   overall: {
-    total_visits: number;
-    money_page_visits: number;
-    safe_page_visits: number;
-    unique_ips: number;
-    cloak_rate: number;
+    totalVisits: number;
+    moneyPageVisits: number;
+    safePageVisits: number;
+    uniqueIps: number;
+    cloakRate: number;
   };
   today: {
-    total_visits: number;
-    money_page_visits: number;
-    safe_page_visits: number;
+    totalVisits: number;
+    moneyPageVisits: number;
+    safePageVisits: number;
   };
   daily: Array<{
     date: string;
-    total_visits: number;
-    money_page_visits: number;
-    safe_page_visits: number;
-    unique_ips: number;
+    totalVisits: number;
+    moneyPageVisits: number;
+    safePageVisits: number;
+    uniqueIps: number;
   }>;
   topCountries: Array<{
     country: string;
@@ -50,7 +50,7 @@ export default function OfferStatsPage({ params }: { params: Promise<{ id: strin
       const offerRes = await fetch(`/api/offers/${id}`);
       const offerData = await offerRes.json();
       if (offerRes.ok) {
-        setOfferName(offerData.data.brand_name);
+        setOfferName(offerData.data.brandName);
       }
 
       // Fetch stats
@@ -128,15 +128,15 @@ export default function OfferStatsPage({ params }: { params: Promise<{ id: strin
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-sm font-medium text-gray-500 mb-2">Today</h3>
           <p className="text-3xl font-bold text-gray-900">
-            {stats.today.total_visits.toLocaleString()}
+            {stats.today.totalVisits.toLocaleString()}
           </p>
           <div className="mt-2 flex items-center text-sm">
             <span className="text-green-600">
-              {stats.today.money_page_visits} money
+              {stats.today.moneyPageVisits} money
             </span>
             <span className="mx-2 text-gray-300">|</span>
             <span className="text-red-600">
-              {stats.today.safe_page_visits} safe
+              {stats.today.safePageVisits} safe
             </span>
           </div>
         </div>
@@ -144,7 +144,7 @@ export default function OfferStatsPage({ params }: { params: Promise<{ id: strin
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-sm font-medium text-gray-500 mb-2">Total Visits</h3>
           <p className="text-3xl font-bold text-gray-900">
-            {stats.overall.total_visits.toLocaleString()}
+            {stats.overall.totalVisits.toLocaleString()}
           </p>
           <p className="mt-2 text-sm text-gray-500">
             {stats.period.start} - {stats.period.end}
@@ -154,7 +154,7 @@ export default function OfferStatsPage({ params }: { params: Promise<{ id: strin
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-sm font-medium text-gray-500 mb-2">Cloak Rate</h3>
           <p className="text-3xl font-bold text-gray-900">
-            {stats.overall.cloak_rate}%
+            {stats.overall.cloakRate}%
           </p>
           <p className="mt-2 text-sm text-gray-500">
             Traffic shown Safe Page
@@ -164,7 +164,7 @@ export default function OfferStatsPage({ params }: { params: Promise<{ id: strin
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-sm font-medium text-gray-500 mb-2">Unique IPs</h3>
           <p className="text-3xl font-bold text-gray-900">
-            {stats.overall.unique_ips.toLocaleString()}
+            {stats.overall.uniqueIps.toLocaleString()}
           </p>
           <p className="mt-2 text-sm text-gray-500">
             Distinct visitors
@@ -180,13 +180,13 @@ export default function OfferStatsPage({ params }: { params: Promise<{ id: strin
             <div>
               <div className="flex justify-between text-sm mb-1">
                 <span className="text-green-600 font-medium">Money Page</span>
-                <span>{stats.overall.money_page_visits.toLocaleString()}</span>
+                <span>{stats.overall.moneyPageVisits.toLocaleString()}</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-3">
                 <div
                   className="bg-green-500 h-3 rounded-full"
                   style={{
-                    width: `${stats.overall.total_visits > 0 ? (stats.overall.money_page_visits / stats.overall.total_visits) * 100 : 0}%`,
+                    width: `${stats.overall.totalVisits > 0 ? (stats.overall.moneyPageVisits / stats.overall.totalVisits) * 100 : 0}%`,
                   }}
                 />
               </div>
@@ -194,13 +194,13 @@ export default function OfferStatsPage({ params }: { params: Promise<{ id: strin
             <div>
               <div className="flex justify-between text-sm mb-1">
                 <span className="text-red-600 font-medium">Safe Page</span>
-                <span>{stats.overall.safe_page_visits.toLocaleString()}</span>
+                <span>{stats.overall.safePageVisits.toLocaleString()}</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-3">
                 <div
                   className="bg-red-500 h-3 rounded-full"
                   style={{
-                    width: `${stats.overall.total_visits > 0 ? (stats.overall.safe_page_visits / stats.overall.total_visits) * 100 : 0}%`,
+                    width: `${stats.overall.totalVisits > 0 ? (stats.overall.safePageVisits / stats.overall.totalVisits) * 100 : 0}%`,
                   }}
                 />
               </div>
@@ -274,8 +274,8 @@ export default function OfferStatsPage({ params }: { params: Promise<{ id: strin
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {stats.daily.slice(-30).reverse().map((day) => {
-                  const cloakRate = day.total_visits > 0
-                    ? Math.round((day.safe_page_visits / day.total_visits) * 100)
+                  const cloakRate = day.totalVisits > 0
+                    ? Math.round((day.safePageVisits / day.totalVisits) * 100)
                     : 0;
                   return (
                     <tr key={day.date} className="hover:bg-gray-50">
@@ -287,16 +287,16 @@ export default function OfferStatsPage({ params }: { params: Promise<{ id: strin
                         })}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900 text-right font-medium">
-                        {day.total_visits.toLocaleString()}
+                        {day.totalVisits.toLocaleString()}
                       </td>
                       <td className="px-4 py-3 text-sm text-green-600 text-right">
-                        {day.money_page_visits.toLocaleString()}
+                        {day.moneyPageVisits.toLocaleString()}
                       </td>
                       <td className="px-4 py-3 text-sm text-red-600 text-right">
-                        {day.safe_page_visits.toLocaleString()}
+                        {day.safePageVisits.toLocaleString()}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600 text-right">
-                        {day.unique_ips.toLocaleString()}
+                        {day.uniqueIps.toLocaleString()}
                       </td>
                       <td className="px-4 py-3 text-sm text-right">
                         <span className={`px-2 py-0.5 rounded text-xs font-medium ${

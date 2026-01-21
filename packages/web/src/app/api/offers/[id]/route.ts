@@ -3,6 +3,7 @@ import { queryAll, queryOne, execute, safeJsonParse } from '@autoguard/shared';
 import type { Offer, Page } from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 import { success, errors } from '@/lib/api-response';
+import { withSnakeCaseAliases } from '@/lib/key-case';
 
 // 更新 Offer 的验证 schema
 const updateOfferSchema = z.object({
@@ -130,7 +131,7 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   try {
-    const body = await request.json();
+    const body = withSnakeCaseAliases(await request.json());
     const data = updateOfferSchema.parse(body);
 
     // 构建更新 SQL

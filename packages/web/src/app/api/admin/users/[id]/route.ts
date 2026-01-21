@@ -9,6 +9,7 @@ import { queryOne, execute, hashPassword } from '@autoguard/shared';
 import type { User, UserWithoutPassword } from '@autoguard/shared';
 import { z } from 'zod';
 import { success, errors } from '@/lib/api-response';
+import { withSnakeCaseAliases } from '@/lib/key-case';
 
 // 更新用户请求验证
 const UpdateUserSchema = z.object({
@@ -79,7 +80,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return errors.notFound('用户不存在');
     }
 
-    const body = await request.json();
+    const body = withSnakeCaseAliases(await request.json());
     const parsed = UpdateUserSchema.safeParse(body);
 
     if (!parsed.success) {

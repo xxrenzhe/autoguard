@@ -7,6 +7,7 @@
  */
 
 import { NextResponse } from 'next/server';
+import { withCamelCaseAliases } from './key-case';
 
 export interface PaginationMeta {
   page: number;
@@ -37,7 +38,7 @@ export interface APIErrorResponse {
  * 成功响应
  */
 export function success<T>(data: T, message?: string): NextResponse<APISuccessResponse<T>> {
-  const body: APISuccessResponse<T> = { data };
+  const body: APISuccessResponse<T> = { data: withCamelCaseAliases(data) as T };
   if (message) {
     body.message = message;
   }
@@ -51,15 +52,17 @@ export function list<T>(
   data: T[],
   pagination: { page: number; limit: number; total: number }
 ): NextResponse<APIListResponse<T>> {
-  return NextResponse.json({
-    data,
+  const body = {
+    data: withCamelCaseAliases(data) as T[],
     pagination: {
       page: pagination.page,
       limit: pagination.limit,
       total: pagination.total,
       total_pages: Math.ceil(pagination.total / pagination.limit),
     },
-  });
+  };
+
+  return NextResponse.json(withCamelCaseAliases(body) as APIListResponse<T>);
 }
 
 /**

@@ -221,23 +221,23 @@ export const Settings = {
   /**
    * 获取完整的 Cloak 配置（用于注入到 cloak engine）
    */
-  getCloakConfig: () => {
+  getCloakConfig: (userId?: number) => {
     const config: Record<string, unknown> = {};
 
     // 超时设置
-    const timeout = getSetting<number>('cloak', 'decision_timeout_ms');
+    const timeout = getSetting<number>('cloak', 'decision_timeout_ms', userId);
     if (timeout !== null) {
       config.decisionTimeoutMs = timeout;
     }
 
     // 阈值设置
-    const threshold = getSetting<number>('cloak', 'safe_mode_threshold');
+    const threshold = getSetting<number>('cloak', 'safe_mode_threshold', userId);
     if (threshold !== null) {
       config.safeModeThreshold = threshold;
     }
 
     // 权重设置
-    const weightsJson = getSetting<string>('cloak', 'weights');
+    const weightsJson = getSetting<string>('cloak', 'weights', userId);
     if (weightsJson) {
       try {
         config.weights = JSON.parse(weightsJson);
@@ -247,7 +247,7 @@ export const Settings = {
     }
 
     // L2 配置
-    const l2Json = getSetting<string>('cloak', 'l2_config');
+    const l2Json = getSetting<string>('cloak', 'l2_config', userId);
     if (l2Json) {
       try {
         config.l2 = JSON.parse(l2Json);
@@ -257,7 +257,7 @@ export const Settings = {
     }
 
     // L4 配置
-    const l4Json = getSetting<string>('cloak', 'l4_config');
+    const l4Json = getSetting<string>('cloak', 'l4_config', userId);
     if (l4Json) {
       try {
         config.l4 = JSON.parse(l4Json);
@@ -267,13 +267,38 @@ export const Settings = {
     }
 
     // L5 配置
-    const l5Json = getSetting<string>('cloak', 'l5_config');
+    const l5Json = getSetting<string>('cloak', 'l5_config', userId);
     if (l5Json) {
       try {
         config.l5 = JSON.parse(l5Json);
       } catch {
         // 忽略解析错误
       }
+    }
+
+    // Detection layer toggles（Dashboard 保存的开关）
+    const enableIpCheck = getSetting<boolean>('cloak', 'enable_ip_check', userId);
+    const enableUaCheck = getSetting<boolean>('cloak', 'enable_ua_check', userId);
+    const enableGeoCheck = getSetting<boolean>('cloak', 'enable_geo_check', userId);
+    const enableRefererCheck = getSetting<boolean>('cloak', 'enable_referer_check', userId);
+
+    if (
+      enableIpCheck === false ||
+      enableUaCheck === false ||
+      enableGeoCheck === false ||
+      enableRefererCheck === false
+    ) {
+      const weights =
+        (config.weights && typeof config.weights === 'object'
+          ? (config.weights as Record<string, unknown>)
+          : {}) as Record<string, unknown>;
+
+      if (enableIpCheck === false) weights.l2 = 0;
+      if (enableGeoCheck === false) weights.l3 = 0;
+      if (enableUaCheck === false) weights.l4 = 0;
+      if (enableRefererCheck === false) weights.l5 = 0;
+
+      config.weights = weights;
     }
 
     return Object.keys(config).length > 0 ? config : null;

@@ -42,7 +42,15 @@ export async function makeDecision(
   }
 ): Promise<CloakDecision> {
   const startTime = Date.now();
-  const config = { ...defaultConfig, ...options?.config };
+  const override = options?.config;
+  const config: CloakConfig = {
+    ...defaultConfig,
+    ...override,
+    weights: { ...defaultConfig.weights, ...override?.weights },
+    l2: { ...defaultConfig.l2, ...override?.l2 },
+    l4: { ...defaultConfig.l4, ...override?.l4 },
+    l5: { ...defaultConfig.l5, ...override?.l5 },
+  };
 
   // 确保引擎已初始化
   if (!engineInitialized) {
@@ -143,56 +151,65 @@ async function runDetection(
   totalWeight += weights.l1;
 
   // L2 - IP 情报
-  const l2Result = await l2Detector.detect(request, context);
-  details.l2 = l2Result.details as DetectionDetails['l2'];
+  if (weights.l2 > 0) {
+    const l2Result = await l2Detector.detect(request, context);
+    details.l2 = l2Result.details as DetectionDetails['l2'];
 
-  if (!l2Result.passed && l2Result.score === 0) {
-    return {
-      score: 0,
-      blocked: true,
-      blockedAt: 'L2',
-      reason: l2Result.reason,
-    };
+    if (!l2Result.passed && l2Result.score === 0) {
+      return {
+        score: 0,
+        blocked: true,
+        blockedAt: 'L2',
+        reason: l2Result.reason,
+      };
+    }
+    totalScore += l2Result.score * weights.l2;
+    totalWeight += weights.l2;
   }
-  totalScore += l2Result.score * weights.l2;
-  totalWeight += weights.l2;
 
   // L3 - 地理位置
-  const l3Result = await l3Detector.detect(request, context);
-  details.l3 = l3Result.details as DetectionDetails['l3'];
+  if (weights.l3 > 0) {
+    const l3Result = await l3Detector.detect(request, context);
+    details.l3 = l3Result.details as DetectionDetails['l3'];
 
-  if (!l3Result.passed && l3Result.score === 0) {
-    return {
-      score: 0,
-      blocked: true,
-      blockedAt: 'L3',
-      reason: l3Result.reason,
-    };
+    if (!l3Result.passed && l3Result.score === 0) {
+      return {
+        score: 0,
+        blocked: true,
+        blockedAt: 'L3',
+        reason: l3Result.reason,
+      };
+    }
+    totalScore += l3Result.score * weights.l3;
+    totalWeight += weights.l3;
   }
-  totalScore += l3Result.score * weights.l3;
-  totalWeight += weights.l3;
 
   // L4 - UA 检测
-  const l4Result = await l4Detector.detect(request, context);
-  details.l4 = l4Result.details as DetectionDetails['l4'];
+  if (weights.l4 > 0) {
+    const l4Result = await l4Detector.detect(request, context);
+    details.l4 = l4Result.details as DetectionDetails['l4'];
 
-  if (!l4Result.passed && l4Result.score === 0) {
-    return {
-      score: 0,
-      blocked: true,
-      blockedAt: 'L4',
-      reason: l4Result.reason,
-    };
+    if (!l4Result.passed && l4Result.score === 0) {
+      return {
+        score: 0,
+        blocked: true,
+        blockedAt: 'L4',
+        reason: l4Result.reason,
+      };
+    }
+    totalScore += l4Result.score * weights.l4;
+    totalWeight += weights.l4;
   }
-  totalScore += l4Result.score * weights.l4;
-  totalWeight += weights.l4;
 
   // L5 - Referer/链接分析
   const l5Result = await l5Detector.detect(request, context);
   details.l5 = l5Result.details as DetectionDetails['l5'];
 
-  totalScore += l5Result.score * weights.l5;
-  totalWeight += weights.l5;
+  // L5 默认不阻断，仅参与打分（同时用于提取 tracking params 写日志）
+  if (weights.l5 > 0) {
+    totalScore += l5Result.score * weights.l5;
+    totalWeight += weights.l5;
+  }
 
   // 计算加权平均分
   const finalScore = totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0;

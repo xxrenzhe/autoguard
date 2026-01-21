@@ -6,19 +6,19 @@ import { toast } from 'sonner';
 interface BlacklistEntry {
   id: number;
   // Different value columns per type
-  ip_address?: string;
+  ipAddress?: string;
   cidr?: string;
   asn?: string;
-  isp_name?: string;
+  ispName?: string;
   pattern?: string;
-  pattern_type?: string;
-  country_code?: string;
-  region_code?: string;
-  block_type?: string;
+  patternType?: string;
+  countryCode?: string;
+  regionCode?: string;
+  blockType?: string;
   reason: string | null;
   source: string | null;
-  expires_at: string | null;
-  created_at: string;
+  expiresAt: string | null;
+  createdAt: string;
 }
 
 type BlacklistType = 'ip' | 'ip_range' | 'ua' | 'isp' | 'geo';
@@ -43,15 +43,15 @@ const TYPE_PLACEHOLDERS: Record<BlacklistType, string> = {
 function getEntryValue(entry: BlacklistEntry, type: BlacklistType): string {
   switch (type) {
     case 'ip':
-      return entry.ip_address || '';
+      return entry.ipAddress || '';
     case 'ip_range':
       return entry.cidr || '';
     case 'ua':
       return entry.pattern || '';
     case 'isp':
-      return entry.asn ? `${entry.asn}${entry.isp_name ? ` (${entry.isp_name})` : ''}` : entry.isp_name || '';
+      return entry.asn ? `${entry.asn}${entry.ispName ? ` (${entry.ispName})` : ''}` : entry.ispName || '';
     case 'geo':
-      return entry.country_code ? `${entry.country_code}${entry.region_code ? `/${entry.region_code}` : ''}` : '';
+      return entry.countryCode ? `${entry.countryCode}${entry.regionCode ? `/${entry.regionCode}` : ''}` : '';
     default:
       return '';
   }
@@ -126,13 +126,13 @@ export default function BlacklistPage() {
       }
 
       const counts = data.data?.counts;
-      const userCounts = data.data?.user_counts;
+      const userCounts = data.data?.userCounts;
       const effectiveCounts = userCounts || counts;
       if (!effectiveCounts) return;
 
       setStats({
         ip: effectiveCounts.ip || 0,
-        ip_range: effectiveCounts.ip_ranges || 0,
+        ip_range: effectiveCounts.ipRanges || 0,
         ua: effectiveCounts.uas || 0,
         isp: effectiveCounts.isps || 0,
         geo: effectiveCounts.geos || 0,
@@ -375,14 +375,14 @@ export default function BlacklistPage() {
                       <code className="text-sm bg-gray-100 px-2 py-1 rounded">
                         {getEntryValue(entry, activeType)}
                       </code>
-                      {activeType === 'ua' && entry.pattern_type && (
-                        <span className="ml-2 text-xs text-gray-400">({entry.pattern_type})</span>
+                      {activeType === 'ua' && entry.patternType && (
+                        <span className="ml-2 text-xs text-gray-400">({entry.patternType})</span>
                       )}
-                      {activeType === 'geo' && entry.block_type && (
+                      {activeType === 'geo' && entry.blockType && (
                         <span className={`ml-2 text-xs px-2 py-0.5 rounded ${
-                          entry.block_type === 'block' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
+                          entry.blockType === 'block' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
                         }`}>
-                          {entry.block_type}
+                          {entry.blockType}
                         </span>
                       )}
                     </td>
@@ -397,11 +397,11 @@ export default function BlacklistPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {new Date(entry.created_at).toLocaleDateString()}
+                      {new Date(entry.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {entry.expires_at
-                        ? new Date(entry.expires_at).toLocaleDateString()
+                      {entry.expiresAt
+                        ? new Date(entry.expiresAt).toLocaleDateString()
                         : 'Never'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">

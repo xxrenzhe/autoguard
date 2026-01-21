@@ -34,8 +34,8 @@ const DEFAULT_SETTINGS: Settings = {
     proxy_enabled: false,
   },
   cloak: {
-    decision_timeout_ms: 100,
-    safe_mode_threshold: 50,
+    decision_timeout_ms: 50,
+    safe_mode_threshold: 60,
     enable_ip_check: true,
     enable_ua_check: true,
     enable_geo_check: true,
@@ -230,7 +230,7 @@ export default function SettingsPage() {
                 <div className="flex space-x-3">
                   <input
                     type="number"
-                    value={settings.cloak.decision_timeout_ms || 100}
+                    value={settings.cloak.decision_timeout_ms || 50}
                     onChange={(e) => updateLocalSetting('cloak', 'decision_timeout_ms', parseInt(e.target.value))}
                     min={10}
                     max={1000}
@@ -256,7 +256,7 @@ export default function SettingsPage() {
                 <div className="flex space-x-3">
                   <input
                     type="number"
-                    value={settings.cloak.safe_mode_threshold || 50}
+                    value={settings.cloak.safe_mode_threshold || 60}
                     onChange={(e) => updateLocalSetting('cloak', 'safe_mode_threshold', parseInt(e.target.value))}
                     min={0}
                     max={100}
@@ -271,7 +271,7 @@ export default function SettingsPage() {
                   </button>
                 </div>
                 <p className="mt-2 text-sm text-gray-500">
-                  Risk score threshold above which traffic is shown safe page
+                  Trusted score threshold below which traffic is shown Safe Page (high score = trusted)
                 </p>
               </div>
 
@@ -279,10 +279,10 @@ export default function SettingsPage() {
                 <h3 className="text-sm font-medium text-gray-900 mb-4">Detection Layers</h3>
                 <div className="space-y-4">
                   {[
-                    { key: 'enable_ip_check', label: 'IP Blacklist Check', description: 'Block known bad IPs and datacenter ranges' },
-                    { key: 'enable_ua_check', label: 'User-Agent Check', description: 'Detect bot user agents and crawlers' },
-                    { key: 'enable_geo_check', label: 'Geo Check', description: 'Filter by country/region restrictions' },
-                    { key: 'enable_referer_check', label: 'Referer Check', description: 'Validate traffic sources' },
+                    { key: 'enable_ip_check', label: 'IP Intelligence Check', description: 'Datacenter / VPN / Proxy detection' },
+                    { key: 'enable_ua_check', label: 'User-Agent Heuristics', description: 'Bot / crawler / headless detection' },
+                    { key: 'enable_geo_check', label: 'Geo Targeting Check', description: 'Filter by target countries and high-risk regions' },
+                    { key: 'enable_referer_check', label: 'Referer / Tracking Check', description: 'Analyze referer and tracking parameters' },
                   ].map((item) => (
                     <div key={item.key} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                       <div>

@@ -40,6 +40,10 @@ export async function POST(request: Request, { params }: Params) {
     return errors.validation('Source is not active');
   }
 
+  if (!source.url) {
+    return errors.validation('Source URL is empty');
+  }
+
   try {
     // Update sync status to 'syncing'
     execute(

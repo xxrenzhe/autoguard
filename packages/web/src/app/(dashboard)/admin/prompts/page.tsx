@@ -7,20 +7,19 @@ interface Prompt {
   name: string;
   category: string;
   description: string | null;
-  active_version_id: number | null;
-  created_at: string;
-  updated_at: string;
+  isActive?: boolean;
+  activeVersion?: { id: number; version: string; usageCount: number; successRate: number | null } | null;
 }
 
 interface PromptVersion {
   id: number;
-  prompt_id: number;
+  promptId: number;
   version: number;
   content: string;
-  is_active: number;
+  isActive: number;
   status: string;
-  created_at: string;
-  activated_at: string | null;
+  createdAt: string;
+  activatedAt: string | null;
 }
 
 export default function AdminPromptsPage() {
@@ -149,7 +148,7 @@ export default function AdminPromptsPage() {
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">Version {version.version}</span>
-                          {version.is_active === 1 ? (
+                          {version.isActive === 1 ? (
                             <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">
                               Active
                             </span>
@@ -161,9 +160,9 @@ export default function AdminPromptsPage() {
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-gray-500">
-                            {new Date(version.created_at).toLocaleDateString()}
+                            {new Date(version.createdAt).toLocaleDateString()}
                           </span>
-                          {version.is_active !== 1 && (
+                          {version.isActive !== 1 && (
                             <button
                               onClick={() => activateVersion(selectedPrompt.id, version.id)}
                               className="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"

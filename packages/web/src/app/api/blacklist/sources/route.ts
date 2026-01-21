@@ -34,7 +34,19 @@ export async function GET(request: Request) {
   const offset = (page - 1) * limit;
 
   const sources = queryAll<BlacklistSource>(
-    `SELECT * FROM blacklist_sources ORDER BY name ASC LIMIT ? OFFSET ?`,
+    `SELECT
+      s.*,
+      (
+        SELECT COUNT(*) FROM blacklist_ips bi
+        WHERE bi.user_id IS NULL AND bi.source = ('source:' || s.id)
+      ) +
+      (
+        SELECT COUNT(*) FROM blacklist_ip_ranges br
+        WHERE br.user_id IS NULL AND br.source = ('source:' || s.id)
+      ) AS entry_count
+     FROM blacklist_sources s
+     ORDER BY s.name ASC
+     LIMIT ? OFFSET ?`,
     [limit, offset]
   );
 

@@ -4,7 +4,7 @@
  * - 黑名单同步 (DB -> Redis)
  * - 黑名单过期清理
  * - 每日统计聚合
- * - 外部黑名单源同步
+ * - 外部黑名单源同步（手动触发队列）
  */
 
 import {
@@ -12,6 +12,9 @@ import {
   cleanupExpiredBlacklists,
   getRedis,
   CacheKeys,
+  safeJsonParse,
+  isValidIPv4,
+  isValidCIDR,
 } from '@autoguard/shared';
 import Database from 'better-sqlite3';
 
@@ -19,7 +22,10 @@ import Database from 'better-sqlite3';
 const BLACKLIST_SYNC_INTERVAL = parseInt(process.env.BLACKLIST_SYNC_INTERVAL || '300000', 10); // 5 分钟
 const EXPIRY_CLEANUP_INTERVAL = parseInt(process.env.EXPIRY_CLEANUP_INTERVAL || '3600000', 10); // 1 小时
 const STATS_AGGREGATION_INTERVAL = parseInt(process.env.STATS_AGGREGATION_INTERVAL || '300000', 10); // 5 分钟
-const DB_PATH = process.env.SQLITE_DB_PATH || './data/db/autoguard.db';
+const DB_PATH =
+  process.env.SQLITE_DB_PATH ||
+  process.env.DATABASE_PATH ||
+  './data/db/autoguard.db';
 
 // 任务状态
 interface TaskStatus {
@@ -41,6 +47,9 @@ const taskStatuses: Record<TaskName, TaskStatus> = {
 // 数据库连接
 let db: Database.Database;
 
+// 外部黑名单源同步队列（由 API 手动触发）
+const BLACKLIST_SOURCE_SYNC_QUEUE = 'autoguard:queue:blacklist_sync';
+
 /**
  * 初始化
  */
@@ -58,6 +67,10 @@ async function init(): Promise<void> {
   await runBlacklistSync();
 
   console.log('[Scheduler] Initialization complete');
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -79,6 +92,207 @@ async function runBlacklistSync(): Promise<void> {
     taskStatuses[taskName].errorCount++;
     taskStatuses[taskName].lastError = error instanceof Error ? error.message : 'Unknown error';
     console.error('[Scheduler] Blacklist sync failed:', error);
+  }
+}
+
+type BlacklistSyncJob = {
+  sourceId: number;
+  sourceName?: string;
+  sourceType?: string;
+  url?: string | null;
+  triggeredBy?: number;
+  triggeredAt?: string;
+};
+
+function parseBlacklistSourceContent(text: string): {
+  ips: Map<string, string | null>;
+  cidrs: Map<string, string | null>;
+} {
+  const ips = new Map<string, string | null>();
+  const cidrs = new Map<string, string | null>();
+
+  const lines = text.split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith('#') || line.startsWith('//') || line.startsWith(';')) continue;
+
+    // 简单去掉行尾注释（仅支持 #）
+    const content = line.split('#')[0]!.trim();
+    if (!content) continue;
+
+    // 支持 CSV: value,reason
+    const [valueRaw, reasonRaw] = content.split(',');
+    const value = (valueRaw || '').trim();
+    if (!value) continue;
+
+    const reason = (reasonRaw || '').trim() || null;
+
+    if (isValidIPv4(value)) {
+      if (!ips.has(value)) ips.set(value, reason);
+      continue;
+    }
+
+    if (isValidCIDR(value)) {
+      if (!cidrs.has(value)) cidrs.set(value, reason);
+      continue;
+    }
+  }
+
+  return { ips, cidrs };
+}
+
+async function syncBlacklistSourceById(sourceId: number): Promise<{ ipCount: number; cidrCount: number }> {
+  const source = db
+    .prepare(
+      `SELECT id, name, source_type, url, is_active
+       FROM blacklist_sources
+       WHERE id = ?`
+    )
+    .get(sourceId) as
+    | { id: number; name: string; source_type: string; url: string | null; is_active: number }
+    | undefined;
+
+  if (!source) {
+    throw new Error('Blacklist source not found');
+  }
+
+  if (!source.is_active) {
+    throw new Error('Blacklist source is not active');
+  }
+
+  if (!source.url) {
+    throw new Error('Blacklist source URL is empty');
+  }
+
+  // 标记为 syncing
+  db.prepare(
+    `UPDATE blacklist_sources
+     SET sync_status = 'syncing',
+         sync_error = NULL,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`
+  ).run(sourceId);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+
+  let text: string;
+  try {
+    const resp = await fetch(source.url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'AutoGuard/1.0 (+blacklist-sync)',
+        Accept: 'text/plain,*/*',
+      },
+    });
+    if (!resp.ok) {
+      throw new Error(`Fetch failed: HTTP ${resp.status}`);
+    }
+    text = await resp.text();
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  const { ips, cidrs } = parseBlacklistSourceContent(text);
+  const sourceTag = `source:${source.id}`;
+
+  const deleteOld = db.transaction(() => {
+    db.prepare(`DELETE FROM blacklist_ips WHERE user_id IS NULL AND source = ?`).run(sourceTag);
+    db.prepare(`DELETE FROM blacklist_ip_ranges WHERE user_id IS NULL AND source = ?`).run(sourceTag);
+
+    const insertIp = db.prepare(
+      `INSERT INTO blacklist_ips (user_id, ip_address, reason, source, is_active)
+       VALUES (NULL, ?, ?, ?, 1)`
+    );
+    const insertCidr = db.prepare(
+      `INSERT INTO blacklist_ip_ranges (user_id, cidr, reason, source, is_active)
+       VALUES (NULL, ?, ?, ?, 1)`
+    );
+
+    for (const [ip, reason] of ips) {
+      insertIp.run(ip, reason, sourceTag);
+    }
+
+    for (const [cidr, reason] of cidrs) {
+      insertCidr.run(cidr, reason, sourceTag);
+    }
+  });
+
+  deleteOld();
+
+  // 刷新 Redis 缓存
+  await syncAllBlacklists();
+
+  // 标记为 success
+  db.prepare(
+    `UPDATE blacklist_sources
+     SET last_sync_at = CURRENT_TIMESTAMP,
+         sync_status = 'success',
+         sync_error = NULL,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`
+  ).run(sourceId);
+
+  console.log(`[Scheduler] Blacklist source synced: id=${source.id} name=${source.name} ip=${ips.size} cidr=${cidrs.size}`);
+  return { ipCount: ips.size, cidrCount: cidrs.size };
+}
+
+async function startBlacklistSourceSyncQueue(): Promise<void> {
+  const redis = getRedis();
+  const pendingKey = BLACKLIST_SOURCE_SYNC_QUEUE;
+  const processingKey = `${pendingKey}:processing`;
+
+  // 重启恢复：把 processing 里的任务放回 pending
+  try {
+    let moved = 0;
+    while (true) {
+      const item = await redis.rpoplpush(processingKey, pendingKey);
+      if (!item) break;
+      moved++;
+    }
+    if (moved > 0) {
+      console.warn(`[Scheduler] Re-queued ${moved} stuck blacklist sync jobs from processing list`);
+    }
+  } catch (error) {
+    console.error('[Scheduler] Failed to re-queue blacklist sync jobs:', error);
+  }
+
+  while (true) {
+    try {
+      const jobData = await redis.brpoplpush(pendingKey, processingKey, 5);
+      if (!jobData) continue;
+
+      const job = safeJsonParse<BlacklistSyncJob | null>(jobData, null);
+      if (!job || typeof job.sourceId !== 'number') {
+        console.error('[Scheduler] Invalid blacklist sync job:', jobData);
+        await redis.lrem(processingKey, 1, jobData);
+        continue;
+      }
+
+      try {
+        await syncBlacklistSourceById(job.sourceId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[Scheduler] Blacklist source sync failed: sourceId=${job.sourceId} error=${message}`);
+        try {
+          db.prepare(
+            `UPDATE blacklist_sources
+             SET sync_status = 'failed',
+                 sync_error = ?,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?`
+          ).run(message, job.sourceId);
+        } catch (dbError) {
+          console.error('[Scheduler] Failed to update blacklist_sources status:', dbError);
+        }
+      } finally {
+        await redis.lrem(processingKey, 1, jobData);
+      }
+    } catch (error) {
+      console.error('[Scheduler] Blacklist source sync queue error:', error);
+      await sleep(1000);
+    }
   }
 }
 
@@ -246,6 +460,11 @@ async function start(): Promise<void> {
   setInterval(runBlacklistSync, BLACKLIST_SYNC_INTERVAL);
   setInterval(runExpiryCleanup, EXPIRY_CLEANUP_INTERVAL);
   setInterval(runStatsAggregation, STATS_AGGREGATION_INTERVAL);
+
+  // 手动触发的外部黑名单源同步队列
+  startBlacklistSourceSyncQueue().catch((err) => {
+    console.error('[Scheduler] Failed to start blacklist source sync queue:', err);
+  });
 
   console.log('[Scheduler] Started with intervals:');
   console.log(`  - Blacklist sync: ${BLACKLIST_SYNC_INTERVAL / 1000}s`);

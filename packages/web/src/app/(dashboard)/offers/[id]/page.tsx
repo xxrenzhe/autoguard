@@ -7,19 +7,19 @@ import { toast } from 'sonner';
 
 interface OfferDetail {
   id: number;
-  brand_name: string;
-  brand_url: string;
-  affiliate_link: string;
+  brandName: string;
+  brandUrl: string;
+  affiliateLink: string;
   subdomain: string;
-  custom_domain: string | null;
-  custom_domain_status: string | null;
-  custom_domain_verified_at: string | null;
-  target_countries: string[];
-  cloak_enabled: boolean;
+  customDomain: string | null;
+  customDomainStatus: string | null;
+  customDomainVerifiedAt: string | null;
+  targetCountries: string[];
+  cloakEnabled: boolean;
   status: string;
-  created_at: string;
-  updated_at: string;
-  access_urls: {
+  createdAt: string;
+  updatedAt: string;
+  accessUrls: {
     system: string;
     custom: string | null;
   };
@@ -61,7 +61,7 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
       const response = await fetch(`/api/offers/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cloak_enabled: !offer.cloak_enabled }),
+        body: JSON.stringify({ cloakEnabled: !offer.cloakEnabled }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -69,8 +69,8 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
         return;
       }
 
-      setOffer({ ...offer, cloak_enabled: !offer.cloak_enabled });
-      toast.success(!offer.cloak_enabled ? 'Cloak enabled' : 'Cloak disabled');
+      setOffer({ ...offer, cloakEnabled: !offer.cloakEnabled });
+      toast.success(!offer.cloakEnabled ? 'Cloak enabled' : 'Cloak disabled');
     } catch {
       toast.error('Network error');
     }
@@ -144,9 +144,9 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
               ← Back
             </Link>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">{offer.brand_name}</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{offer.brandName}</h1>
           <p className="text-gray-500 mt-1">
-            Created {new Date(offer.created_at).toLocaleDateString()}
+            Created {new Date(offer.createdAt).toLocaleDateString()}
           </p>
         </div>
         <div className="flex items-center space-x-3">
@@ -179,11 +179,11 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
                 </label>
                 <div className="flex items-center space-x-2">
                   <code className="flex-1 px-3 py-2 bg-gray-100 rounded text-sm font-mono">
-                    {offer.access_urls.system}
+                    {offer.accessUrls.system}
                   </code>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(offer.access_urls.system);
+                      navigator.clipboard.writeText(offer.accessUrls.system);
                       toast.success('Copied to clipboard');
                     }}
                     className="px-3 py-2 text-gray-600 hover:text-gray-900"
@@ -191,7 +191,7 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
                     Copy
                   </button>
                   <a
-                    href={offer.access_urls.system}
+                    href={offer.accessUrls.system}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="px-3 py-2 text-blue-600 hover:text-blue-700"
@@ -200,18 +200,18 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
                   </a>
                 </div>
               </div>
-              {offer.access_urls.custom && (
+              {offer.accessUrls.custom && (
                 <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1">
                     Custom Domain
                   </label>
                   <div className="flex items-center space-x-2">
                     <code className="flex-1 px-3 py-2 bg-gray-100 rounded text-sm font-mono">
-                      {offer.access_urls.custom}
+                      {offer.accessUrls.custom}
                     </code>
                     <button
                       onClick={() => {
-                        navigator.clipboard.writeText(offer.access_urls.custom!);
+                        navigator.clipboard.writeText(offer.accessUrls.custom!);
                         toast.success('Copied to clipboard');
                       }}
                       className="px-3 py-2 text-gray-600 hover:text-gray-900"
@@ -219,7 +219,7 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
                       Copy
                     </button>
                     <a
-                      href={offer.access_urls.custom}
+                      href={offer.accessUrls.custom}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="px-3 py-2 text-blue-600 hover:text-blue-700"
@@ -240,12 +240,12 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
                 <dt className="text-sm font-medium text-gray-500">Brand URL</dt>
                 <dd className="mt-1">
                   <a
-                    href={offer.brand_url}
+                    href={offer.brandUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-600 hover:text-blue-700"
                   >
-                    {offer.brand_url}
+                    {offer.brandUrl}
                   </a>
                 </dd>
               </div>
@@ -253,21 +253,21 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
                 <dt className="text-sm font-medium text-gray-500">Affiliate Link</dt>
                 <dd className="mt-1">
                   <a
-                    href={offer.affiliate_link}
+                    href={offer.affiliateLink}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-600 hover:text-blue-700 break-all"
                   >
-                    {offer.affiliate_link}
+                    {offer.affiliateLink}
                   </a>
                 </dd>
               </div>
               <div>
                 <dt className="text-sm font-medium text-gray-500">Target Countries</dt>
                 <dd className="mt-1">
-                  {offer.target_countries && offer.target_countries.length > 0 ? (
+                  {offer.targetCountries && offer.targetCountries.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
-                      {offer.target_countries.map((country) => (
+                      {offer.targetCountries.map((country) => (
                         <span
                           key={country}
                           className="px-2 py-1 bg-gray-100 rounded text-sm"
@@ -295,23 +295,23 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
                 Configure
               </Link>
             </div>
-            {offer.custom_domain ? (
+            {offer.customDomain ? (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-sm">{offer.custom_domain}</span>
+                  <span className="font-mono text-sm">{offer.customDomain}</span>
                   <span
                     className={`px-2 py-1 text-xs font-medium rounded-full ${
-                      offer.custom_domain_status === 'verified'
+                      offer.customDomainStatus === 'verified'
                         ? 'bg-green-100 text-green-800'
-                        : offer.custom_domain_status === 'pending'
+                        : offer.customDomainStatus === 'pending'
                         ? 'bg-yellow-100 text-yellow-800'
                         : 'bg-red-100 text-red-800'
                     }`}
                   >
-                    {offer.custom_domain_status}
+                    {offer.customDomainStatus}
                   </span>
                 </div>
-                {offer.custom_domain_status === 'pending' && (
+                {offer.customDomainStatus === 'pending' && (
                   <p className="text-sm text-gray-500">
                     Add a CNAME record pointing to <code className="bg-gray-100 px-1 rounded">cname.autoguard.dev</code>
                   </p>
@@ -368,10 +368,10 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-600">
-                  {offer.cloak_enabled ? 'Enabled' : 'Disabled'}
+                  {offer.cloakEnabled ? 'Enabled' : 'Disabled'}
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
-                  {offer.cloak_enabled
+                  {offer.cloakEnabled
                     ? 'Traffic filtering is active'
                     : 'All visitors see Safe Page'}
                 </p>
@@ -379,12 +379,12 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
               <button
                 onClick={toggleCloak}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  offer.cloak_enabled ? 'bg-blue-600' : 'bg-gray-200'
+                  offer.cloakEnabled ? 'bg-blue-600' : 'bg-gray-200'
                 }`}
               >
                 <span
                   className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    offer.cloak_enabled ? 'translate-x-6' : 'translate-x-1'
+                    offer.cloakEnabled ? 'translate-x-6' : 'translate-x-1'
                   }`}
                 />
               </button>

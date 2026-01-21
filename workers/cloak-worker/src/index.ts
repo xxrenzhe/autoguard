@@ -69,7 +69,7 @@ async function handleCloakRequest(req: Request, res: Response): Promise<void> {
         : [];
 
       // 运行检测引擎（使用 DB 配置）
-      const cloakConfig = Settings.getCloakConfig();
+      const cloakConfig = Settings.getCloakConfig(offer.user_id);
       const decision = await makeDecision(
         cloakRequest,
         offer.id,
@@ -77,7 +77,7 @@ async function handleCloakRequest(req: Request, res: Response): Promise<void> {
         {
           targetCountries,
           cloakEnabled: true,
-          config: cloakConfig || undefined,
+          config: (cloakConfig as any) || undefined,
         }
       );
 

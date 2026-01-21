@@ -8,9 +8,9 @@ import { toast } from 'sonner';
 interface DomainStatus {
   domain: string | null;
   status: string;
-  verified_at: string | null;
+  verifiedAt: string | null;
   token: string | null;
-  cname_target: string;
+  cnameTarget: string;
 }
 
 export default function CustomDomainPage({ params }: { params: Promise<{ id: string }> }) {
@@ -222,7 +222,7 @@ export default function CustomDomainPage({ params }: { params: Promise<{ id: str
                     </div>
                     <div>
                       <span className="text-gray-500 text-xs block">Target</span>
-                      {domainStatus.cname_target}
+                      {domainStatus.cnameTarget}
                     </div>
                   </div>
                 </div>
@@ -254,9 +254,9 @@ export default function CustomDomainPage({ params }: { params: Promise<{ id: str
               </div>
             )}
 
-            {domainStatus.status === 'verified' && domainStatus.verified_at && (
+            {domainStatus.status === 'verified' && domainStatus.verifiedAt && (
               <p className="mt-3 text-sm text-gray-500">
-                Verified on {new Date(domainStatus.verified_at).toLocaleDateString()}
+                Verified on {new Date(domainStatus.verifiedAt).toLocaleDateString()}
               </p>
             )}
           </div>
@@ -299,7 +299,7 @@ export default function CustomDomainPage({ params }: { params: Promise<{ id: str
           <ol className="list-decimal list-inside space-y-2 text-sm text-gray-600">
             <li>Enter your custom domain above and click &quot;Set Domain&quot;</li>
             <li>Go to your domain registrar&apos;s DNS settings</li>
-            <li>Add a CNAME record pointing to <code className="bg-gray-100 px-1 rounded">{domainStatus.cname_target}</code></li>
+            <li>Add a CNAME record pointing to <code className="bg-gray-100 px-1 rounded">{domainStatus.cnameTarget}</code></li>
             <li>Wait for DNS propagation (usually 5-30 minutes, up to 48 hours)</li>
             <li>Click &quot;Verify Now&quot; to confirm the configuration</li>
             <li>Once verified, your custom domain will be active</li>

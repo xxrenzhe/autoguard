@@ -8,10 +8,29 @@ import stealth from 'puppeteer-extra-plugin-stealth';
 import * as cheerio from 'cheerio';
 import path from 'path';
 import fs from 'fs/promises';
+import { existsSync } from 'fs';
 import { sleep } from '@autoguard/shared';
+import { rewriteLinks } from './rewrite-links';
 
 // 启用 stealth 插件
 chromium.use(stealth());
+
+function resolveChromiumExecutablePath(): string | undefined {
+  const envPath =
+    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || process.env.CHROMIUM_PATH;
+
+  if (envPath) {
+    if (existsSync(envPath)) return envPath;
+    console.warn(`[Scraper] Chromium executable not found at: ${envPath}`);
+  }
+
+  const candidates = ['/usr/bin/chromium-browser', '/usr/bin/chromium'];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+
+  return undefined;
+}
 
 /**
  * 抓取配置
@@ -76,9 +95,12 @@ export async function scrapePage(config: ScrapeConfig): Promise<ScrapeResult> {
   let browser;
 
   try {
+    const executablePath = resolveChromiumExecutablePath();
+
     // 启动浏览器
     browser = await chromium.launch({
       headless: true,
+      ...(executablePath ? { executablePath } : {}),
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -341,75 +363,6 @@ function processHtml(html: string, baseUrl: string, assets: AssetInfo[]): string
  */
 function escapeRegExp(string: string): string {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/**
- * 重写所有链接为推广链接
- */
-function rewriteLinks(html: string, affiliateLink: string): string {
-  const $ = cheerio.load(html);
-
-  // 重写所有 <a> 标签
-  $('a').each((_, el) => {
-    const $el = $(el);
-    const href = $el.attr('href');
-
-    // 跳过锚点链接
-    if (!href || href.startsWith('#')) return;
-
-    // 跳过 mailto 和 tel
-    if (href.startsWith('mailto:') || href.startsWith('tel:')) return;
-
-    // 跳过已经是本地资源的链接
-    if (href.startsWith('assets/') || href.startsWith('./assets/')) return;
-
-    // 替换为推广链接
-    $el.attr('href', affiliateLink);
-    $el.attr('target', '_blank');
-    $el.attr('rel', 'noopener noreferrer');
-    $el.attr('data-track', 'cta-click');
-  });
-
-  // 重写所有按钮的点击事件
-  $('button').each((_, el) => {
-    const $el = $(el);
-    // 移除原有的 onclick
-    $el.removeAttr('onclick');
-    // 添加新的 onclick
-    $el.attr('onclick', `window.open('${affiliateLink}', '_blank')`);
-    $el.attr('data-track', 'cta-click');
-  });
-
-  // 重写表单提交
-  $('form').each((_, el) => {
-    const $el = $(el);
-    $el.attr('action', affiliateLink);
-    $el.attr('method', 'GET');
-    $el.attr('target', '_blank');
-  });
-
-  // 添加点击追踪脚本
-  const trackingScript = `
-<script>
-(function() {
-  document.querySelectorAll('[data-track="cta-click"]').forEach(function(el) {
-    el.addEventListener('click', function() {
-      // Track click (can be extended for analytics)
-      console.log('CTA Click:', el.tagName, el.textContent?.substring(0, 50));
-    });
-  });
-})();
-</script>
-`;
-
-  // 在 </body> 前插入追踪脚本
-  const bodyCloseIndex = $.html().toLowerCase().lastIndexOf('</body>');
-  if (bodyCloseIndex !== -1) {
-    const htmlContent = $.html();
-    return htmlContent.slice(0, bodyCloseIndex) + trackingScript + htmlContent.slice(bodyCloseIndex);
-  }
-
-  return $.html();
 }
 
 /**

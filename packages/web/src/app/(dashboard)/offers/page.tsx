@@ -6,10 +6,10 @@ import { toast } from 'sonner';
 
 interface OfferRow {
   id: number;
-  brand_name: string;
+  brandName: string;
   subdomain: string;
   status: string;
-  cloak_enabled: boolean;
+  cloakEnabled: boolean;
 }
 
 export default function OffersPage() {
@@ -42,7 +42,7 @@ export default function OffersPage() {
       const response = await fetch(`/api/offers/${offerId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cloak_enabled: !currentState }),
+        body: JSON.stringify({ cloakEnabled: !currentState }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -51,7 +51,7 @@ export default function OffersPage() {
       }
 
       setOffers(offers.map((o) =>
-        o.id === offerId ? { ...o, cloak_enabled: !currentState } : o
+        o.id === offerId ? { ...o, cloakEnabled: !currentState } : o
       ));
       toast.success(!currentState ? 'Cloak enabled' : 'Cloak disabled');
     } catch {
@@ -116,7 +116,7 @@ export default function OffersPage() {
                 <tr key={offer.id}>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="font-medium text-gray-900">
-                      {offer.brand_name}
+                      {offer.brandName}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -144,14 +144,14 @@ export default function OffersPage() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <button
-                      onClick={() => toggleCloak(offer.id, offer.cloak_enabled)}
+                      onClick={() => toggleCloak(offer.id, offer.cloakEnabled)}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        offer.cloak_enabled ? 'bg-blue-600' : 'bg-gray-200'
+                        offer.cloakEnabled ? 'bg-blue-600' : 'bg-gray-200'
                       }`}
                     >
                       <span
                         className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          offer.cloak_enabled ? 'translate-x-6' : 'translate-x-1'
+                          offer.cloakEnabled ? 'translate-x-6' : 'translate-x-1'
                         }`}
                       />
                     </button>

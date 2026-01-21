@@ -21,19 +21,19 @@ export default function NewOfferPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    brand_name: '',
-    brand_url: '',
-    affiliate_link: '',
-    target_countries: [] as string[],
-    cloak_enabled: false,
+    brandName: '',
+    brandUrl: '',
+    affiliateLink: '',
+    targetCountries: [] as string[],
+    cloakEnabled: false,
   });
 
   function handleCountryToggle(code: string) {
     setFormData((prev) => ({
       ...prev,
-      target_countries: prev.target_countries.includes(code)
-        ? prev.target_countries.filter((c) => c !== code)
-        : [...prev.target_countries, code],
+      targetCountries: prev.targetCountries.includes(code)
+        ? prev.targetCountries.filter((c) => c !== code)
+        : [...prev.targetCountries, code],
     }));
   }
 
@@ -75,9 +75,9 @@ export default function NewOfferPage() {
           </label>
           <input
             type="text"
-            value={formData.brand_name}
+            value={formData.brandName}
             onChange={(e) =>
-              setFormData({ ...formData, brand_name: e.target.value })
+              setFormData({ ...formData, brandName: e.target.value })
             }
             required
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -91,9 +91,9 @@ export default function NewOfferPage() {
           </label>
           <input
             type="url"
-            value={formData.brand_url}
+            value={formData.brandUrl}
             onChange={(e) =>
-              setFormData({ ...formData, brand_url: e.target.value })
+              setFormData({ ...formData, brandUrl: e.target.value })
             }
             required
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -107,9 +107,9 @@ export default function NewOfferPage() {
           </label>
           <input
             type="url"
-            value={formData.affiliate_link}
+            value={formData.affiliateLink}
             onChange={(e) =>
-              setFormData({ ...formData, affiliate_link: e.target.value })
+              setFormData({ ...formData, affiliateLink: e.target.value })
             }
             required
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -128,7 +128,7 @@ export default function NewOfferPage() {
                 type="button"
                 onClick={() => handleCountryToggle(country.code)}
                 className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
-                  formData.target_countries.includes(country.code)
+                  formData.targetCountries.includes(country.code)
                     ? 'bg-blue-100 border-blue-500 text-blue-700'
                     : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
                 }`}
@@ -152,15 +152,15 @@ export default function NewOfferPage() {
           <button
             type="button"
             onClick={() =>
-              setFormData({ ...formData, cloak_enabled: !formData.cloak_enabled })
+              setFormData({ ...formData, cloakEnabled: !formData.cloakEnabled })
             }
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              formData.cloak_enabled ? 'bg-blue-600' : 'bg-gray-200'
+              formData.cloakEnabled ? 'bg-blue-600' : 'bg-gray-200'
             }`}
           >
             <span
               className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                formData.cloak_enabled ? 'translate-x-6' : 'translate-x-1'
+                formData.cloakEnabled ? 'translate-x-6' : 'translate-x-1'
               }`}
             />
           </button>
