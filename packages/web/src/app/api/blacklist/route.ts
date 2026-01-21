@@ -1,5 +1,14 @@
 import { z } from 'zod';
-import { queryAll, queryOne, execute, deleteCache, CacheKeys } from '@autoguard/shared';
+import {
+  queryAll,
+  queryOne,
+  execute,
+  syncGeoBlacklist,
+  syncIPBlacklist,
+  syncIPRangeBlacklist,
+  syncISPBlacklist,
+  syncUABlacklist,
+} from '@autoguard/shared';
 import { getCurrentUser } from '@/lib/auth';
 import { success, list, errors } from '@/lib/api-response';
 
@@ -40,23 +49,30 @@ const tableConfig: Record<
   },
 };
 
-// Helper to invalidate blacklist cache for a specific type and scope
-async function invalidateBlacklistCache(type: BlacklistType, userId: number | null): Promise<void> {
-  const scope = userId === null ? 'global' : userId;
-  const cacheKeyFn = {
-    ip: CacheKeys.blacklist.ip,
-    ip_range: CacheKeys.blacklist.ipRanges,
-    ua: CacheKeys.blacklist.uas,
-    isp: CacheKeys.blacklist.isps,
-    geo: CacheKeys.blacklist.geos,
-  }[type];
-
-  if (cacheKeyFn) {
-    try {
-      await deleteCache(cacheKeyFn(scope));
-    } catch (err) {
-      console.error('Failed to invalidate blacklist cache:', err);
+// Helper to refresh blacklist caches so changes take effect immediately.
+async function refreshBlacklistCache(type: BlacklistType): Promise<void> {
+  try {
+    switch (type) {
+      case 'ip':
+        await syncIPBlacklist();
+        return;
+      case 'ip_range':
+        await syncIPRangeBlacklist();
+        return;
+      case 'ua':
+        await syncUABlacklist();
+        return;
+      case 'isp':
+        await syncISPBlacklist();
+        return;
+      case 'geo':
+        await syncGeoBlacklist();
+        return;
+      default:
+        return;
     }
+  } catch (err) {
+    console.error('Failed to refresh blacklist cache:', err);
   }
 }
 
@@ -265,8 +281,8 @@ export async function POST(request: Request) {
         }
       }
 
-      // Invalidate cache after bulk add
-      await invalidateBlacklistCache(data.type, targetUserId);
+      // Refresh cache after bulk add
+      await refreshBlacklistCache(data.type);
 
       return success(
         { added, skipped },
@@ -308,7 +324,7 @@ export async function POST(request: Request) {
       );
 
       // Invalidate cache
-      await invalidateBlacklistCache(data.type, targetUserId);
+      await refreshBlacklistCache(data.type);
 
       return success({ id: existing.id }, 'Entry reactivated');
     }
@@ -317,7 +333,7 @@ export async function POST(request: Request) {
     const result = insertEntry(data.type, data as Record<string, unknown>, targetUserId);
 
     // Invalidate cache
-    await invalidateBlacklistCache(data.type, targetUserId);
+    await refreshBlacklistCache(data.type);
 
     return success({ id: result.lastInsertRowid }, 'Entry added');
   } catch (error) {
@@ -336,6 +352,8 @@ export async function DELETE(request: Request) {
   if (!user) {
     return errors.unauthorized();
   }
+
+  const isAdmin = user.role === 'admin';
 
   try {
     const { searchParams } = new URL(request.url);
@@ -359,16 +377,28 @@ export async function DELETE(request: Request) {
       [entryId]
     );
 
+    if (!entry) {
+      return errors.notFound('Entry not found');
+    }
+
+    // Permission checks:
+    // - Only admin can modify global entries
+    // - Users can only modify their own entries
+    if (entry.user_id === null && !isAdmin) {
+      return errors.forbidden('Only administrators can modify global blacklist');
+    }
+    if (entry.user_id !== null && entry.user_id !== user.userId) {
+      return errors.forbidden('Cannot modify another user blacklist');
+    }
+
     // Soft delete
     execute(
       `UPDATE ${config.tableName} SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
       [entryId]
     );
 
-    // Invalidate cache
-    if (entry) {
-      await invalidateBlacklistCache(type, entry.user_id);
-    }
+    // Refresh cache
+    await refreshBlacklistCache(type);
 
     return success({ id: entryId, deleted: true }, 'Entry removed');
   } catch (error) {

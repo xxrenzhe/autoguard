@@ -49,6 +49,10 @@ export interface L1Details {
   ispBlocked: boolean;
   geoBlocked: boolean;
   blockedReason?: string;
+  blockedType?: 'ip' | 'ip_range' | 'ua' | 'isp' | 'geo';
+  blockedValue?: string;
+  blockedScope?: 'global' | 'user';
+  blockedPatternType?: 'exact' | 'contains' | 'regex';
 }
 
 /**

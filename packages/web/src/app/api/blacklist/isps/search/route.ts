@@ -4,7 +4,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { success, errors } from '@/lib/api-response';
 
 const searchSchema = z.object({
-  query: z.string().optional(),
+  q: z.string().optional(),
   limit: z.coerce.number().int().positive().max(100).default(50),
 });
 
@@ -28,16 +28,16 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const params = searchSchema.parse({
-      query: searchParams.get('query') || '',
+      q: searchParams.get('q') || searchParams.get('query') || '',
       limit: searchParams.get('limit') || 50,
     });
 
     let sql = `SELECT * FROM blacklist_isps WHERE is_active = 1`;
     const sqlParams: unknown[] = [];
 
-    if (params.query) {
+    if (params.q) {
       sql += ` AND (asn LIKE ? OR isp_name LIKE ?)`;
-      const searchTerm = `%${params.query}%`;
+      const searchTerm = `%${params.q}%`;
       sqlParams.push(searchTerm, searchTerm);
     }
 
@@ -46,16 +46,13 @@ export async function GET(request: Request) {
 
     const entries = queryAll<ISPEntry>(sql, sqlParams);
 
-    return success(
-      entries.map((entry) => ({
-        id: entry.id,
+    return success({
+      suggestions: entries.map((entry) => ({
+        name: entry.isp_name || entry.asn || 'Unknown',
         asn: entry.asn,
-        isp_name: entry.isp_name,
-        reason: entry.reason,
-        source: entry.source,
-        label: entry.isp_name || entry.asn || 'Unknown',
-      }))
-    );
+        type: 'isp',
+      })),
+    });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return errors.validation('Invalid parameters', { errors: error.errors });

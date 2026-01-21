@@ -10,7 +10,8 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
 
   // Accept both SystemDesign2-style { ip: '1.2.3.4' } and internal { value: '1.2.3.4' }
-  const ipValue = (body.ip || body.value) as string | undefined;
+  // Also accept { ip_address: '1.2.3.4' } as in SystemDesign2 examples.
+  const ipValue = (body.ip || body.ip_address || body.value) as string | undefined;
 
   return proxyBlacklistPOST(request, 'ip', {
     type: 'ip',
@@ -21,4 +22,3 @@ export async function POST(request: Request) {
     scope: body.scope,
   });
 }
-

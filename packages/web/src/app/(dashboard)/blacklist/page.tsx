@@ -90,6 +90,7 @@ export default function BlacklistPage() {
     try {
       const params = new URLSearchParams({
         type: activeType,
+        scope: 'user',
         page: page.toString(),
         limit: limit.toString(),
       });
@@ -125,14 +126,16 @@ export default function BlacklistPage() {
       }
 
       const counts = data.data?.counts;
-      if (!counts) return;
+      const userCounts = data.data?.user_counts;
+      const effectiveCounts = userCounts || counts;
+      if (!effectiveCounts) return;
 
       setStats({
-        ip: counts.ip || 0,
-        ip_range: counts.ip_ranges || 0,
-        ua: counts.uas || 0,
-        isp: counts.isps || 0,
-        geo: counts.geos || 0,
+        ip: effectiveCounts.ip || 0,
+        ip_range: effectiveCounts.ip_ranges || 0,
+        ua: effectiveCounts.uas || 0,
+        isp: effectiveCounts.isps || 0,
+        geo: effectiveCounts.geos || 0,
       });
     } catch {
       toast.error('Network error');

@@ -32,29 +32,42 @@ export class L1BlacklistDetector implements Detector {
     };
 
     // 1. 检查 IP 黑名单（精确匹配 + CIDR）
-    const ipBlocked = await this.checkIPBlacklist(request.ip, context.userId);
-    if (ipBlocked) {
+    const ipMatch = await this.checkIPBlacklist(request.ip, context.userId);
+    if (ipMatch) {
       details.passed = false;
       details.ipBlocked = true;
-      details.blockedReason = 'IP in blacklist';
+      details.blockedType = ipMatch.type;
+      details.blockedValue = ipMatch.value;
+      details.blockedScope = ipMatch.scope;
+      details.blockedReason =
+        ipMatch.type === 'ip'
+          ? `IP in blacklist: ${ipMatch.value}`
+          : `IP in CIDR blacklist: ${ipMatch.value}`;
       return {
         passed: false,
         score: 0,
-        reason: 'IP blocked by L1 blacklist',
+        reason:
+          ipMatch.type === 'ip'
+            ? `IP blocked by L1 blacklist: ${ipMatch.value}`
+            : `IP range blocked by L1 blacklist: ${ipMatch.value}`,
         details,
       };
     }
 
     // 2. 检查 UA 黑名单
-    const uaBlocked = await this.checkUABlacklist(request.userAgent, context.userId);
-    if (uaBlocked) {
+    const uaMatch = await this.checkUABlacklist(request.userAgent, context.userId);
+    if (uaMatch) {
       details.passed = false;
       details.uaBlocked = true;
-      details.blockedReason = 'User-Agent in blacklist';
+      details.blockedType = 'ua';
+      details.blockedValue = uaMatch.pattern;
+      details.blockedScope = uaMatch.scope;
+      details.blockedPatternType = uaMatch.patternType;
+      details.blockedReason = `User-Agent pattern matched: ${uaMatch.pattern}`;
       return {
         passed: false,
         score: 0,
-        reason: 'UA blocked by L1 blacklist',
+        reason: `UA blocked by L1 blacklist: ${uaMatch.pattern}`,
         details,
       };
     }
@@ -64,15 +77,18 @@ export class L1BlacklistDetector implements Detector {
 
     // 4. 检查 ISP/ASN 黑名单
     if (ipInfo.asn) {
-      const ispBlocked = await this.checkISPBlacklist(ipInfo.asn, ipInfo.org, context.userId);
-      if (ispBlocked) {
+      const ispMatch = await this.checkISPBlacklist(ipInfo.asn, ipInfo.org, context.userId);
+      if (ispMatch) {
         details.passed = false;
         details.ispBlocked = true;
-        details.blockedReason = `ISP/ASN blocked: ${ipInfo.asn}`;
+        details.blockedType = 'isp';
+        details.blockedValue = ispMatch.value;
+        details.blockedScope = ispMatch.scope;
+        details.blockedReason = `ISP/ASN blocked: ${ispMatch.value}`;
         return {
           passed: false,
           score: 0,
-          reason: 'ISP/ASN blocked by L1 blacklist',
+          reason: `ISP/ASN blocked by L1 blacklist: ${ispMatch.value}`,
           details,
         };
       }
@@ -80,19 +96,22 @@ export class L1BlacklistDetector implements Detector {
 
     // 5. 检查 Geo 黑名单
     if (ipInfo.country) {
-      const geoBlocked = await this.checkGeoBlacklist(
+      const geoMatch = await this.checkGeoBlacklist(
         ipInfo.country,
         ipInfo.region,
         context.userId
       );
-      if (geoBlocked) {
+      if (geoMatch) {
         details.passed = false;
         details.geoBlocked = true;
-        details.blockedReason = `Geo blocked: ${ipInfo.country}${ipInfo.region ? `/${ipInfo.region}` : ''}`;
+        details.blockedType = 'geo';
+        details.blockedValue = geoMatch.value;
+        details.blockedScope = geoMatch.scope;
+        details.blockedReason = `Geo blocked: ${geoMatch.value}`;
         return {
           passed: false,
           score: 0,
-          reason: 'Geo blocked by L1 blacklist',
+          reason: `Geo blocked by L1 blacklist: ${geoMatch.value}`,
           details,
         };
       }
@@ -108,37 +127,40 @@ export class L1BlacklistDetector implements Detector {
   /**
    * 检查 IP 是否在黑名单中
    */
-  private async checkIPBlacklist(ip: string, userId: number): Promise<boolean> {
+  private async checkIPBlacklist(
+    ip: string,
+    userId: number
+  ): Promise<{ type: 'ip' | 'ip_range'; value: string; scope: 'global' | 'user' } | null> {
     const redis = getRedis();
 
     // 检查全局 IP 黑名单（精确匹配）
     const globalKey = CacheKeys.blacklist.ip('global');
     if (await redis.sismember(globalKey, ip)) {
-      return true;
+      return { type: 'ip', value: ip, scope: 'global' };
     }
 
     // 检查用户 IP 黑名单（精确匹配）
     const userKey = CacheKeys.blacklist.ip(userId);
     if (await redis.sismember(userKey, ip)) {
-      return true;
+      return { type: 'ip', value: ip, scope: 'user' };
     }
 
     // 检查 CIDR 范围
     const globalRanges = await this.getCIDRRanges('global');
     for (const cidr of globalRanges) {
       if (ipInCIDR(ip, cidr)) {
-        return true;
+        return { type: 'ip_range', value: cidr, scope: 'global' };
       }
     }
 
     const userRanges = await this.getCIDRRanges(userId);
     for (const cidr of userRanges) {
       if (ipInCIDR(ip, cidr)) {
-        return true;
+        return { type: 'ip_range', value: cidr, scope: 'user' };
       }
     }
 
-    return false;
+    return null;
   }
 
   /**
@@ -160,7 +182,13 @@ export class L1BlacklistDetector implements Detector {
   /**
    * 检查 UA 是否在黑名单中
    */
-  private async checkUABlacklist(ua: string, userId: number): Promise<boolean> {
+  private async checkUABlacklist(
+    ua: string,
+    userId: number
+  ): Promise<
+    | { pattern: string; patternType: 'exact' | 'contains' | 'regex'; scope: 'global' | 'user' }
+    | null
+  > {
     const redis = getRedis();
     const uaLower = ua.toLowerCase();
 
@@ -169,9 +197,8 @@ export class L1BlacklistDetector implements Detector {
     const globalPatterns = await redis.lrange(globalKey, 0, -1);
 
     for (const pattern of globalPatterns) {
-      if (this.matchUAPattern(uaLower, pattern)) {
-        return true;
-      }
+      const match = this.matchUAPattern(uaLower, pattern);
+      if (match) return { ...match, scope: 'global' };
     }
 
     // 获取用户 UA 模式
@@ -179,36 +206,43 @@ export class L1BlacklistDetector implements Detector {
     const userPatterns = await redis.lrange(userKey, 0, -1);
 
     for (const pattern of userPatterns) {
-      if (this.matchUAPattern(uaLower, pattern)) {
-        return true;
-      }
+      const match = this.matchUAPattern(uaLower, pattern);
+      if (match) return { ...match, scope: 'user' };
     }
 
-    return false;
+    return null;
   }
 
   /**
    * 匹配 UA 模式
    */
-  private matchUAPattern(ua: string, pattern: string): boolean {
+  private matchUAPattern(
+    ua: string,
+    raw: string
+  ): { pattern: string; patternType: 'exact' | 'contains' | 'regex' } | null {
     try {
       // 尝试解析为 JSON 对象获取模式类型
-      const parsed = JSON.parse(pattern) as { pattern: string; type: string };
-      const { pattern: p, type } = parsed;
+      const parsed = JSON.parse(raw) as { pattern?: string; type?: string };
+      const p = parsed.pattern || '';
+      const type = (parsed.type || 'contains') as 'exact' | 'contains' | 'regex';
 
       switch (type) {
         case 'exact':
-          return ua === p.toLowerCase();
+          return ua === p.toLowerCase() ? { pattern: p, patternType: 'exact' } : null;
         case 'contains':
-          return ua.includes(p.toLowerCase());
+          return ua.includes(p.toLowerCase()) ? { pattern: p, patternType: 'contains' } : null;
         case 'regex':
-          return new RegExp(p, 'i').test(ua);
+          try {
+            return new RegExp(p, 'i').test(ua) ? { pattern: p, patternType: 'regex' } : null;
+          } catch {
+            return null;
+          }
         default:
-          return ua.includes(p.toLowerCase());
+          return ua.includes(p.toLowerCase()) ? { pattern: p, patternType: 'contains' } : null;
       }
     } catch {
       // 如果不是 JSON，当作 contains 处理
-      return ua.includes(pattern.toLowerCase());
+      return ua.includes(raw.toLowerCase()) ? { pattern: raw, patternType: 'contains' } : null;
     }
   }
 
@@ -219,19 +253,19 @@ export class L1BlacklistDetector implements Detector {
     asn: string,
     ispName: string | undefined,
     userId: number
-  ): Promise<boolean> {
+  ): Promise<{ value: string; scope: 'global' | 'user' } | null> {
     const redis = getRedis();
 
     // 检查全局 ISP 黑名单（SET 存储 ASN）
     const globalKey = CacheKeys.blacklist.isps('global');
     if (await redis.sismember(globalKey, asn)) {
-      return true;
+      return { value: asn, scope: 'global' };
     }
 
     // 检查用户 ISP 黑名单
     const userKey = CacheKeys.blacklist.isps(userId);
     if (await redis.sismember(userKey, asn)) {
-      return true;
+      return { value: asn, scope: 'user' };
     }
 
     // 如果有 ISP 名称，也检查名称匹配（模糊匹配）
@@ -242,12 +276,19 @@ export class L1BlacklistDetector implements Detector {
       const globalIspNames = await redis.hgetall(`${globalKey}:names`);
       for (const name of Object.values(globalIspNames)) {
         if (ispLower.includes(name.toLowerCase())) {
-          return true;
+          return { value: name, scope: 'global' };
+        }
+      }
+
+      const userIspNames = await redis.hgetall(`${userKey}:names`);
+      for (const name of Object.values(userIspNames)) {
+        if (ispLower.includes(name.toLowerCase())) {
+          return { value: name, scope: 'user' };
         }
       }
     }
 
-    return false;
+    return null;
   }
 
   /**
@@ -257,7 +298,7 @@ export class L1BlacklistDetector implements Detector {
     country: string,
     region: string | undefined,
     userId: number
-  ): Promise<boolean> {
+  ): Promise<{ value: string; scope: 'global' | 'user' } | null> {
     const redis = getRedis();
 
     // 检查全局 Geo 黑名单（HASH 存储: country_code -> block_type）
@@ -265,7 +306,7 @@ export class L1BlacklistDetector implements Detector {
     const globalBlockType = await redis.hget(globalKey, country);
 
     if (globalBlockType === 'block') {
-      return true;
+      return { value: country, scope: 'global' };
     }
 
     // 检查用户 Geo 黑名单
@@ -273,7 +314,7 @@ export class L1BlacklistDetector implements Detector {
     const userBlockType = await redis.hget(userKey, country);
 
     if (userBlockType === 'block') {
-      return true;
+      return { value: country, scope: 'user' };
     }
 
     // 检查区域级别黑名单（更精细的控制）
@@ -282,16 +323,16 @@ export class L1BlacklistDetector implements Detector {
 
       const globalRegionBlockType = await redis.hget(globalKey, regionKey);
       if (globalRegionBlockType === 'block') {
-        return true;
+        return { value: regionKey, scope: 'global' };
       }
 
       const userRegionBlockType = await redis.hget(userKey, regionKey);
       if (userRegionBlockType === 'block') {
-        return true;
+        return { value: regionKey, scope: 'user' };
       }
     }
 
-    return false;
+    return null;
   }
 }
 
